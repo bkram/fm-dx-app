@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -446,7 +447,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun persistServerUrl(url: String) {
-        preferences.edit().putString(KEY_LAST_SERVER_URL, url).apply()
+        preferences.edit {
+            putString(KEY_LAST_SERVER_URL, url)
+        }
     }
 
     private fun restorePersistedServerUrl() {
@@ -456,12 +459,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun persistSettings(signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) {
-        preferences.edit()
-            .putString(KEY_SIGNAL_UNIT, signalUnit.name)
-            .putInt(KEY_NETWORK_BUFFER, networkBuffer)
-            .putInt(KEY_PLAYER_BUFFER, playerBuffer)
-            .putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
-            .apply()
+        preferences.edit {
+            putString(KEY_SIGNAL_UNIT, signalUnit.name)
+            putInt(KEY_NETWORK_BUFFER, networkBuffer)
+            putInt(KEY_PLAYER_BUFFER, playerBuffer)
+            putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
+        }
     }
 
     private fun restorePersistedSettings() {
