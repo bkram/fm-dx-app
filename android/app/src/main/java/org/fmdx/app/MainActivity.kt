@@ -197,7 +197,7 @@ private fun MainScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
-        SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, currentPty) },
+        SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
         SectionTab(R.string.status) { StatusSection(state, formatSignal) },
         SectionTab(R.string.controls) {
             ControlButtons(
@@ -602,6 +602,7 @@ private fun FrequencyControlsCard(
 private fun TunerSection(
     state: UiState,
     onTuneDirect: (Double) -> Unit,
+    formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -615,10 +616,54 @@ private fun TunerSection(
                 RdsRadiotextContent(state.tunerState)
             }
         }
+        SignalStrengthCard(
+            tunerState = state.tunerState,
+            signalUnit = state.signalUnit,
+            isConnecting = state.isConnecting,
+            formatSignal = formatSignal
+        )
         FrequencyControlsCard(state, onTuneDirect)
     }
 }
 
+@Composable
+private fun SignalStrengthCard(
+    tunerState: TunerState?,
+    signalUnit: SignalUnit,
+    isConnecting: Boolean,
+    formatSignal: (TunerState?, SignalUnit) -> String
+) {
+    val signalValue = tunerState?.signalDbf
+    val progress = signalValue
+        ?.coerceIn(0.0, SIGNAL_MAX_DBF)
+        ?.div(SIGNAL_MAX_DBF)
+        ?.toFloat()
+        ?: 0f
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(
+                    id = R.string.signal_label,
+                    formatSignal(tunerState, signalUnit)
+                ),
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (isConnecting || signalValue == null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
+private const val SIGNAL_MAX_DBF = 130.0
 private const val DEFAULT_MIN_FREQUENCY_KHZ = 65000
 private const val DEFAULT_MAX_FREQUENCY_KHZ = 108_000
 private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
@@ -628,15 +673,19 @@ private fun StatusSection(
     state: UiState,
     formatSignal: (TunerState?, SignalUnit) -> String
 ) {
-    val signalValue = state.tunerState?.signalDbf ?: 0.0
-    val progress = (signalValue.coerceIn(0.0, 130.0) / 130.0).toFloat()
+    val signalValue = state.tunerState?.signalDbf
+    val progress = signalValue
+        ?.coerceIn(0.0, SIGNAL_MAX_DBF)
+        ?.div(SIGNAL_MAX_DBF)
+        ?.toFloat()
+        ?: 0f
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 //            Text(text = stringResource(id = R.string.status), style = MaterialTheme.typography.titleLarge)
-            if (state.isConnecting) {
+            if (state.isConnecting || signalValue == null) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             } else {
                 LinearProgressIndicator(
