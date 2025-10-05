@@ -197,6 +197,7 @@ private fun MainScreen(
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.frequency) { FrequencySection(state, onTuneDirect) },
+        SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, currentPty) },
         SectionTab(R.string.status) { StatusSection(state, formatSignal) },
         SectionTab(R.string.controls) {
             ControlButtons(
@@ -426,6 +427,14 @@ private fun FrequencySection(
     state: UiState,
     onTuneDirect: (Double) -> Unit
 ) {
+    FrequencyControlsCard(state, onTuneDirect)
+}
+
+@Composable
+private fun FrequencyControlsCard(
+    state: UiState,
+    onTuneDirect: (Double) -> Unit
+) {
     val stateMinKHz = state.tunerState?.minFreqMHz?.times(1000)?.roundToInt()
     val stateMaxKHz = state.tunerState?.maxFreqMHz?.times(1000)?.roundToInt()
     val stepKHz = state.tunerState?.stepKHz?.takeIf { it > 0 } ?: DEFAULT_FREQUENCY_STEP_KHZ
@@ -469,19 +478,12 @@ private fun FrequencySection(
 
     val isControlReady = state.isConnected
 
-    val selectedFrequencyLabel = remember(selectedMHz, selectedDecimalIndex, stepKHz) {
-        val freqMHz = selectedMHz + (selectedDecimalIndex * stepKHz / 1000.0)
-        String.format(Locale.getDefault(), "%.2f MHz", freqMHz)
-    }
-
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-//            Text(text = stringResource(id = R.string.frequency), style = MaterialTheme.typography.titleLarge)
-            Text(text = selectedFrequencyLabel, style = MaterialTheme.typography.headlineMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -535,6 +537,27 @@ private fun FrequencySection(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TunerSection(
+    state: UiState,
+    onTuneDirect: (Double) -> Unit,
+    currentPty: (TunerState?) -> String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RdsPsPiContent(state.tunerState)
+                Text(text = stringResource(id = R.string.rds_pty_label, currentPty(state.tunerState)))
+                RdsRadiotextContent(state.tunerState)
+            }
+        }
+        FrequencyControlsCard(state, onTuneDirect)
     }
 }
 
@@ -772,6 +795,42 @@ private fun ControlToggleButton(
 }
 
 @Composable
+private fun RdsPsPiContent(tuner: TunerState?) {
+    val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(id = R.string.rds_ps_label),
+            style = MaterialTheme.typography.labelLarge
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            AnnotatedErrorText(
+                tuner?.ps ?: stringResource(id = R.string.default_value),
+                tuner?.psErrors ?: emptyList()
+            )
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = stringResource(id = R.string.rds_pi_label, piValue),
+            style = MaterialTheme.typography.labelLarge
+        )
+    }
+}
+
+@Composable
+private fun RdsRadiotextContent(tuner: TunerState?) {
+    Text(
+        text = stringResource(id = R.string.radiotext_label),
+        style = MaterialTheme.typography.labelLarge
+    )
+    AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList())
+    AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList())
+}
+
+@Composable
 private fun RdsSection(
     state: UiState,
     currentPty: (TunerState?) -> String
@@ -783,17 +842,7 @@ private fun RdsSection(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 //            Text(text = stringResource(id = R.string.rds), style = MaterialTheme.typography.titleLarge)
-            Text(
-                text = stringResource(id = R.string.rds_ps_label),
-                style = MaterialTheme.typography.labelLarge
-            )
-            AnnotatedErrorText(tuner?.ps ?: "", tuner?.psErrors ?: emptyList())
-            Text(
-                text = stringResource(
-                    id = R.string.rds_pi_label,
-                    tuner?.pi ?: stringResource(id = R.string.default_value)
-                )
-            )
+            RdsPsPiContent(tuner)
             tuner?.ecc?.let { Text(text = stringResource(id = R.string.rds_ecc_label, it)) }
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
@@ -809,12 +858,7 @@ private fun RdsSection(
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
                     ?: stringResource(id = R.string.none)
             Text(text = stringResource(id = R.string.rds_af_label, afText))
-            Text(
-                text = stringResource(id = R.string.radiotext_label),
-                style = MaterialTheme.typography.labelLarge
-            )
-            AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList())
-            AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList())
+            RdsRadiotextContent(tuner)
         }
     }
 }
