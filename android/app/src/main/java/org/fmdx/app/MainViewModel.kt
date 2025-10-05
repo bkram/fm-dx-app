@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -12,14 +13,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import org.fmdx.app.audio.PlaybackService
-import org.fmdx.app.data.ControlConnection
-import org.fmdx.app.data.FmDxRepository
-import org.fmdx.app.data.PluginConnection
-import org.fmdx.app.model.SignalUnit
-import org.fmdx.app.model.SpectrumPoint
-import org.fmdx.app.model.TunerInfo
-import org.fmdx.app.model.TunerState
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
@@ -32,6 +25,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import org.fmdx.app.audio.PlaybackService
+import org.fmdx.app.data.ControlConnection
+import org.fmdx.app.data.FmDxRepository
+import org.fmdx.app.data.PluginConnection
+import org.fmdx.app.model.SignalUnit
+import org.fmdx.app.model.SpectrumPoint
+import org.fmdx.app.model.TunerInfo
+import org.fmdx.app.model.TunerState
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -47,7 +48,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(UiState(spectrum = baselineSpectrum()))
     val uiState: StateFlow<UiState> = _uiState
 
-    private val commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val commandFlow = MutableSharedFlow<String>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     private var controlConnection: ControlConnection? = null
     private var pluginConnection: PluginConnection? = null
@@ -73,7 +77,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun initializeMediaController() {
-        val sessionToken = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
+        val sessionToken = SessionToken(
+            getApplication(),
+            ComponentName(getApplication(), PlaybackService::class.java)
+        )
         controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
         controllerFuture?.addListener(
             {
@@ -92,7 +99,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(serverUrl = url) }
     }
 
-    fun updateSettings(signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) {
+    fun updateSettings(
+        signalUnit: SignalUnit,
+        networkBuffer: Int,
+        playerBuffer: Int,
+        restartAudioOnTune: Boolean
+    ) {
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
@@ -197,11 +209,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             refreshAudioStream(forcePlay = true)
         }
-    }
-
-    fun tuneStep(stepHz: Int) {
-        val currentKHz = _uiState.value.tunerState?.freqKHz ?: return
-        tuneToFrequency((currentKHz + stepHz) / 1000.0)
     }
 
     fun tuneToFrequency(valueMHz: Double) {
@@ -407,8 +414,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val withHttpScheme = when {
             trimmed.startsWith("http://", ignoreCase = true) -> trimmed
             trimmed.startsWith("https://", ignoreCase = true) -> trimmed
-            trimmed.startsWith("ws://", ignoreCase = true) -> "http://" + trimmed.substringAfter("://")
-            trimmed.startsWith("wss://", ignoreCase = true) -> "https://" + trimmed.substringAfter("://")
+            trimmed.startsWith(
+                "ws://",
+                ignoreCase = true
+            ) -> "http://" + trimmed.substringAfter("://")
+
+            trimmed.startsWith(
+                "wss://",
+                ignoreCase = true
+            ) -> "https://" + trimmed.substringAfter("://")
+
             else -> "http://$trimmed"
         }
 
@@ -427,7 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun ensureSpectrum(points: List<SpectrumPoint>): List<SpectrumPoint> {
-        return if (points.isEmpty()) baselineSpectrum() else points
+        return points.ifEmpty { baselineSpectrum() }
     }
 
     companion object {
@@ -451,7 +466,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun persistServerUrl(url: String) {
-        preferences.edit().putString(KEY_LAST_SERVER_URL, url).apply()
+        preferences.edit {
+            putString(KEY_LAST_SERVER_URL, url)
+        }
     }
 
     private fun restorePersistedServerUrl() {
@@ -460,18 +477,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(serverUrl = sanitized) }
     }
 
-    private fun persistSettings(signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) {
-        preferences.edit()
-            .putString(KEY_SIGNAL_UNIT, signalUnit.name)
-            .putInt(KEY_NETWORK_BUFFER, networkBuffer)
-            .putInt(KEY_PLAYER_BUFFER, playerBuffer)
-            .putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
-            .apply()
+    private fun persistSettings(
+        signalUnit: SignalUnit,
+        networkBuffer: Int,
+        playerBuffer: Int,
+        restartAudioOnTune: Boolean
+    ) {
+        preferences.edit {
+            putString(KEY_SIGNAL_UNIT, signalUnit.name)
+            putInt(KEY_NETWORK_BUFFER, networkBuffer)
+            putInt(KEY_PLAYER_BUFFER, playerBuffer)
+            putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
+        }
     }
 
     private fun restorePersistedSettings() {
         val signalUnitName = preferences.getString(KEY_SIGNAL_UNIT, SignalUnit.DBF.name)
-        val signalUnit = SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
+        val signalUnit =
+            SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
         val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 2)
         val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 2000)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, true)
