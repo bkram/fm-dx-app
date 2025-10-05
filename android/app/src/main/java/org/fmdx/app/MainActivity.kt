@@ -198,7 +198,15 @@ private fun MainScreen(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.frequency) { FrequencySection(state, onTuneDirect) },
         SectionTab(R.string.status) { StatusSection(state, formatSignal) },
-        SectionTab(R.string.controls) { ControlButtons(state, onToggleEq, onToggleIms, onCycleAntenna, antennaLabel) },
+        SectionTab(R.string.controls) {
+            ControlButtons(
+                state,
+                onToggleEq,
+                onToggleIms,
+                onCycleAntenna,
+                antennaLabel
+            )
+        },
         SectionTab(R.string.rds) { RdsSection(state, currentPty) },
         SectionTab(R.string.station) { StationSection(state) },
         SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
@@ -208,7 +216,10 @@ private fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(text = stringResource(id = R.string.main_title), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(id = R.string.main_title),
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 actions = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -222,11 +233,16 @@ private fun MainScreen(
                             val icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow
                             Icon(
                                 imageVector = icon,
-                                contentDescription = if (playing) stringResource(id = R.string.stop_audio) else stringResource(id = R.string.play_audio)
+                                contentDescription = if (playing) stringResource(id = R.string.stop_audio) else stringResource(
+                                    id = R.string.play_audio
+                                )
                             )
                         }
                         IconButton(onClick = onShowSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = stringResource(id = R.string.settings))
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = stringResource(id = R.string.settings)
+                            )
                         }
                     }
                 }
@@ -281,7 +297,10 @@ private fun SettingsScreen(
                 title = { Text(stringResource(id = R.string.settings)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(id = R.string.back))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(id = R.string.back)
+                        )
                     }
                 }
             )
@@ -357,7 +376,10 @@ private fun ServerSection(
     onDisconnect: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 //            Text(text = stringResource(id = R.string.server), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
                 value = state.serverUrl,
@@ -365,14 +387,20 @@ private fun ServerSection(
                 label = { Text(stringResource(id = R.string.server_url)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = KeyboardType.Uri),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done,
+                    keyboardType = KeyboardType.Uri
+                ),
                 keyboardActions = KeyboardActions(onDone = { onConnect() })
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onConnect, enabled = !state.isConnecting) {
                     Text(text = stringResource(id = R.string.connect))
                 }
-                OutlinedButton(onClick = onDisconnect, enabled = state.isConnected || state.isConnecting) {
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    enabled = state.isConnected || state.isConnecting
+                ) {
                     Text(text = stringResource(id = R.string.disconnect))
                 }
             }
@@ -522,7 +550,10 @@ private fun StatusSection(
     val signalValue = state.tunerState?.signalDbf ?: 0.0
     val progress = (signalValue.coerceIn(0.0, 130.0) / 130.0).toFloat()
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 //            Text(text = stringResource(id = R.string.status), style = MaterialTheme.typography.titleLarge)
             if (state.isConnecting) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -532,9 +563,23 @@ private fun StatusSection(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            Text(text = stringResource(id = R.string.signal_label, formatSignal(state.tunerState, state.signalUnit)))
-            Text(text = stringResource(id = R.string.users_label, state.tunerState?.users?.toString() ?: stringResource(id = R.string.default_value)))
-            val audioStatus = if (state.audioPlaying) stringResource(id = R.string.audio_playing) else stringResource(id = R.string.audio_stopped)
+            Text(
+                text = stringResource(
+                    id = R.string.signal_label,
+                    formatSignal(state.tunerState, state.signalUnit)
+                )
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.users_label,
+                    state.tunerState?.users?.toString()
+                        ?: stringResource(id = R.string.default_value)
+                )
+            )
+            val audioStatus =
+                if (state.audioPlaying) stringResource(id = R.string.audio_playing) else stringResource(
+                    id = R.string.audio_stopped
+                )
             Text(text = stringResource(id = R.string.audio_label, audioStatus))
         }
     }
@@ -552,14 +597,28 @@ private fun SettingsSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = stringResource(id = R.string.settings_display_title), style = MaterialTheme.typography.titleLarge)
-                SignalUnitSelector(selected = signalUnit, onSignalUnitSelected = { signalUnit = it })
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_display_title),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                SignalUnitSelector(
+                    selected = signalUnit,
+                    onSignalUnitSelected = { signalUnit = it })
             }
         }
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = stringResource(id = R.string.settings_audio_buffering_title), style = MaterialTheme.typography.titleLarge)
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_audio_buffering_title),
+                    style = MaterialTheme.typography.titleLarge
+                )
                 Text(
                     text = stringResource(id = R.string.settings_audio_buffering_desc),
                     style = MaterialTheme.typography.bodyMedium
@@ -617,7 +676,10 @@ private fun SignalUnitSelector(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = stringResource(id = R.string.signal_unit), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.signal_unit),
+            style = MaterialTheme.typography.labelLarge
+        )
         OutlinedButton(onClick = { expanded = true }) {
             Text(text = selected.displayName)
         }
@@ -647,7 +709,10 @@ private fun ControlButtons(
     val imsActive = state.tunerState?.ims == true
     val eqActive = state.tunerState?.eq == true
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 //            Text(text = stringResource(id = R.string.controls), style = MaterialTheme.typography.titleLarge)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -713,11 +778,22 @@ private fun RdsSection(
 ) {
     val tuner = state.tunerState
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
 //            Text(text = stringResource(id = R.string.rds), style = MaterialTheme.typography.titleLarge)
-            Text(text = stringResource(id = R.string.rds_ps_label), style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = stringResource(id = R.string.rds_ps_label),
+                style = MaterialTheme.typography.labelLarge
+            )
             AnnotatedErrorText(tuner?.ps ?: "", tuner?.psErrors ?: emptyList())
-            Text(text = stringResource(id = R.string.rds_pi_label, tuner?.pi ?: stringResource(id = R.string.default_value)))
+            Text(
+                text = stringResource(
+                    id = R.string.rds_pi_label,
+                    tuner?.pi ?: stringResource(id = R.string.default_value)
+                )
+            )
             tuner?.ecc?.let { Text(text = stringResource(id = R.string.rds_ecc_label, it)) }
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
@@ -729,9 +805,14 @@ private fun RdsSection(
             }
             Text(text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)))
             tuner?.diDisplay()?.let { Text(text = stringResource(id = R.string.rds_di_label, it)) }
-            val afText = tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) } ?: stringResource(id = R.string.none)
+            val afText =
+                tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
+                    ?: stringResource(id = R.string.none)
             Text(text = stringResource(id = R.string.rds_af_label, afText))
-            Text(text = stringResource(id = R.string.radiotext_label), style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = stringResource(id = R.string.radiotext_label),
+                style = MaterialTheme.typography.labelLarge
+            )
             AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList())
             AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList())
         }
@@ -759,15 +840,53 @@ private fun AnnotatedErrorText(text: String, errors: List<Int>) {
 private fun StationSection(state: UiState) {
     val tx = state.tunerState?.txInfo
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
 //            Text(text = stringResource(id = R.string.station), style = MaterialTheme.typography.titleLarge)
-            Text(text = stringResource(id = R.string.station_name_label, tx?.name ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_location_label, tx?.city ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_country_label, tx?.countryCode ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_distance_label, tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) } ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_power_label, tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) } ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_polarization_label, tx?.polarization ?: stringResource(id = R.string.default_value)))
-            Text(text = stringResource(id = R.string.station_azimuth_label, tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) } ?: stringResource(id = R.string.default_value)))
+            Text(
+                text = stringResource(
+                    id = R.string.station_name_label,
+                    tx?.name ?: stringResource(id = R.string.default_value)
+                )
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.station_location_label,
+                    tx?.city ?: stringResource(id = R.string.default_value)
+                )
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.station_country_label,
+                    tx?.countryCode ?: stringResource(id = R.string.default_value)
+                )
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.station_distance_label,
+                    tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
+                        ?: stringResource(
+                            id = R.string.default_value
+                        )))
+            Text(
+                text = stringResource(
+                    id = R.string.station_power_label,
+                    tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) } ?: stringResource(
+                        id = R.string.default_value
+                    )))
+            Text(
+                text = stringResource(
+                    id = R.string.station_polarization_label,
+                    tx?.polarization ?: stringResource(id = R.string.default_value)
+                )
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.station_azimuth_label,
+                    tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
+                        ?: stringResource(id = R.string.default_value)))
         }
     }
 }
@@ -779,8 +898,14 @@ private fun SpectrumSection(
     onRefreshSpectrum: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
 //                Text(text = stringResource(id = R.string.spectrum), style = MaterialTheme.typography.titleLarge)
                 if (state.isScanning) {
                     LinearProgressIndicator()
@@ -819,14 +944,15 @@ private fun SpectrumGraph(points: List<SpectrumPoint>, highlightFreq: Double) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
-        ) { 
+        ) {
             val width = size.width
             val height = size.height
 
             drawRect(color = surfaceColor)
             val path = Path()
             points.forEachIndexed { index, point ->
-                val x = ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f) * width
+                val x =
+                    ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f) * width
                 val normalized = point.signalDbf.coerceIn(0.0, maxSig).toFloat() / maxSig.toFloat()
                 val y = height - (normalized * height)
                 if (index == 0) {

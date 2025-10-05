@@ -24,9 +24,10 @@ class PlaybackService : MediaSessionService() {
         val playerBuffer = preferences.getInt("player_buffer", 2000)
 
         val client = OkHttpClient.Builder().build()
-        val webSocketMediaSourceFactory = WebSocketMediaSourceFactory(client, BuildConfig.USER_AGENT, networkBuffer) { error ->
-            // TODO: Handle error
-        }
+        val webSocketMediaSourceFactory =
+            WebSocketMediaSourceFactory(client, BuildConfig.USER_AGENT, networkBuffer) { error ->
+                // TODO: Handle error
+            }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ playerBuffer,
@@ -44,7 +45,8 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+        mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         mediaSession?.player?.let { player ->

@@ -91,7 +91,9 @@ private class WebSocketStreamDataSource(
             .build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send("{\"type\":\"fallback\",\"data\":\"mp3\"}".encodeToByteArray().toByteString())
+                webSocket.send(
+                    "{\"type\":\"fallback\",\"data\":\"mp3\"}".encodeToByteArray().toByteString()
+                )
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {

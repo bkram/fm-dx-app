@@ -91,6 +91,7 @@ data class TunerState(
                         else -> (value * 1000).roundToInt()
                     }
                 }
+
                 stepFromInt != null -> stepFromInt
                 else -> null
             }

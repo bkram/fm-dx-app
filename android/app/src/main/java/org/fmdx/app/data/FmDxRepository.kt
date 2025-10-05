@@ -113,129 +113,134 @@ class FmDxRepository(
         return PluginConnection(webSocket)
     }
 
-    suspend fun fetchTunerInfo(url: String, userAgent: String): TunerInfo = withContext(ioDispatcher) {
-        logDebug("fetchTunerInfo(): requesting metadata from $url")
-        val httpUrl = url.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid URL")
-        val staticUrl = httpUrl.newBuilder()
-            .addPathSegments("static_data")
-            .build()
+    suspend fun fetchTunerInfo(url: String, userAgent: String): TunerInfo =
+        withContext(ioDispatcher) {
+            logDebug("fetchTunerInfo(): requesting metadata from $url")
+            val httpUrl = url.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid URL")
+            val staticUrl = httpUrl.newBuilder()
+                .addPathSegments("static_data")
+                .build()
 
-        var tunerName = ""
-        var tunerDesc = ""
-        var activeAnt: Int? = null
-        val antennaNames = mutableListOf<String>()
+            var tunerName = ""
+            var tunerDesc = ""
+            var activeAnt: Int? = null
+            val antennaNames = mutableListOf<String>()
 
-        try {
-            client.newCall(
-                Request.Builder()
-                    .url(staticUrl)
-                    .header("User-Agent", userAgent)
-                    .build()
-            ).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank()) {
-                        val json = JSONObject(body)
-                        tunerName = json.optString("tunerName", tunerName)
-                        tunerDesc = json.optString("tunerDesc", tunerDesc)
-                        activeAnt = when {
-                            json.has("antSel") -> json.optInt("antSel")
-                            json.has("activeAnt") -> json.optInt("activeAnt")
-                            json.optJSONObject("ant")?.has("active") == true ->
-                                json.optJSONObject("ant")?.optInt("active")
-                            else -> activeAnt
-                        }
-                        json.optJSONObject("ant")?.optJSONArray("names")?.let { arr ->
-                            for (i in 0 until arr.length()) {
-                                arr.optString(i)?.takeIf { it.isNotBlank() }?.let(antennaNames::add)
+            try {
+                client.newCall(
+                    Request.Builder()
+                        .url(staticUrl)
+                        .header("User-Agent", userAgent)
+                        .build()
+                ).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string()
+                        if (!body.isNullOrBlank()) {
+                            val json = JSONObject(body)
+                            tunerName = json.optString("tunerName", tunerName)
+                            tunerDesc = json.optString("tunerDesc", tunerDesc)
+                            activeAnt = when {
+                                json.has("antSel") -> json.optInt("antSel")
+                                json.has("activeAnt") -> json.optInt("activeAnt")
+                                json.optJSONObject("ant")?.has("active") == true ->
+                                    json.optJSONObject("ant")?.optInt("active")
+
+                                else -> activeAnt
+                            }
+                            json.optJSONObject("ant")?.optJSONArray("names")?.let { arr ->
+                                for (i in 0 until arr.length()) {
+                                    arr.optString(i)?.takeIf { it.isNotBlank() }
+                                        ?.let(antennaNames::add)
+                                }
                             }
                         }
                     }
                 }
+            } catch (_: IOException) {
+                // ignore static data fetch errors
             }
-        } catch (_: IOException) {
-            // ignore static data fetch errors
-        }
 
-        logDebug("fetchTunerInfo(): scraping fallback HTML")
-        val document: Document = Jsoup.connect(url)
-            .userAgent(userAgent)
-            .timeout(TIMEOUT_MS.toInt())
-            .get()
-        if (tunerName.isBlank()) {
-            tunerName = document.selectFirst("meta[property=og:title]")?.attr("content")
-                ?.replace("FM-DX WebServer ", "")
-                ?.trim()
-                ?: ""
-        }
-        if (tunerDesc.isBlank()) {
-            tunerDesc = document.selectFirst("meta[property=og:description]")?.attr("content")
-                ?.replace("Server description: ", "")
-                ?.trim()
-                ?: ""
-        }
-        if (antennaNames.isEmpty()) {
-            val elements = document.select("#data-ant ul.options li, #data-ant li")
-            elements.forEach { el ->
-                val text = el.text().trim()
-                if (text.isNotEmpty()) {
-                    antennaNames += text
+            logDebug("fetchTunerInfo(): scraping fallback HTML")
+            val document: Document = Jsoup.connect(url)
+                .userAgent(userAgent)
+                .timeout(TIMEOUT_MS.toInt())
+                .get()
+            if (tunerName.isBlank()) {
+                tunerName = document.selectFirst("meta[property=og:title]")?.attr("content")
+                    ?.replace("FM-DX WebServer ", "")
+                    ?.trim()
+                    ?: ""
+            }
+            if (tunerDesc.isBlank()) {
+                tunerDesc = document.selectFirst("meta[property=og:description]")?.attr("content")
+                    ?.replace("Server description: ", "")
+                    ?.trim()
+                    ?: ""
+            }
+            if (antennaNames.isEmpty()) {
+                val elements = document.select("#data-ant ul.options li, #data-ant li")
+                elements.forEach { el ->
+                    val text = el.text().trim()
+                    if (text.isNotEmpty()) {
+                        antennaNames += text
+                    }
                 }
             }
-        }
-        if (antennaNames.isEmpty()) {
-            if (document.selectFirst("#data-ant-container") != null || document.selectFirst("#data-ant") != null) {
+            if (antennaNames.isEmpty()) {
+                if (document.selectFirst("#data-ant-container") != null || document.selectFirst("#data-ant") != null) {
+                    antennaNames += "Default"
+                }
+            }
+            if (antennaNames.isEmpty()) {
                 antennaNames += "Default"
             }
+            val active = activeAnt ?: 0
+            TunerInfo(
+                tunerName = tunerName,
+                tunerDescription = tunerDesc,
+                antennaNames = antennaNames,
+                activeAntenna = active
+            )
         }
-        if (antennaNames.isEmpty()) {
-            antennaNames += "Default"
-        }
-        val active = activeAnt ?: 0
-        TunerInfo(
-            tunerName = tunerName,
-            tunerDescription = tunerDesc,
-            antennaNames = antennaNames,
-            activeAntenna = active
-        )
-    }
 
-    suspend fun fetchSpectrumData(url: String, userAgent: String): List<SpectrumPoint>? = withContext(ioDispatcher) {
-        logDebug("fetchSpectrumData(): requesting data from $url")
-        val httpUrl = url.toHttpUrlOrNull() ?: return@withContext null
-        val spectrumUrl = httpUrl.newBuilder()
-            .addPathSegments("spectrum-graph-plugin")
-            .build()
-        val request = Request.Builder()
-            .url(spectrumUrl)
-            .header("User-Agent", userAgent)
-            .header("X-Plugin-Name", "SpectrumGraphPlugin")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                logDebug("fetchSpectrumData(): request failed code=${response.code}")
-                return@use null
+    suspend fun fetchSpectrumData(url: String, userAgent: String): List<SpectrumPoint>? =
+        withContext(ioDispatcher) {
+            logDebug("fetchSpectrumData(): requesting data from $url")
+            val httpUrl = url.toHttpUrlOrNull() ?: return@withContext null
+            val spectrumUrl = httpUrl.newBuilder()
+                .addPathSegments("spectrum-graph-plugin")
+                .build()
+            val request = Request.Builder()
+                .url(spectrumUrl)
+                .header("User-Agent", userAgent)
+                .header("X-Plugin-Name", "SpectrumGraphPlugin")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    logDebug("fetchSpectrumData(): request failed code=${response.code}")
+                    return@use null
+                }
+                val body = response.body?.string() ?: return@use null
+                val json = JSONObject(body)
+                val dataset = when {
+                    json.optString("sd").isNotBlank() -> json.optString("sd")
+                    json.has("ad") -> {
+                        val ad = json.optInt("ad")
+                        json.optString("sd$ad")
+                    }
+
+                    else -> null
+                } ?: return@use null
+                dataset.split(',')
+                    .mapNotNull { pair ->
+                        val parts = pair.split('=')
+                        if (parts.size != 2) return@mapNotNull null
+                        val freq = parts[0].toDoubleOrNull()?.div(1000.0)
+                        val sig = parts[1].toDoubleOrNull()
+                        if (freq != null && sig != null) SpectrumPoint(freq, sig) else null
+                    }
             }
-            val body = response.body?.string() ?: return@use null
-            val json = JSONObject(body)
-            val dataset = when {
-                json.optString("sd").isNotBlank() -> json.optString("sd")
-                json.has("ad") -> {
-                    val ad = json.optInt("ad")
-                    json.optString("sd$ad")
-                }
-                else -> null
-            } ?: return@use null
-            dataset.split(',')
-                .mapNotNull { pair ->
-                    val parts = pair.split('=')
-                    if (parts.size != 2) return@mapNotNull null
-                    val freq = parts[0].toDoubleOrNull()?.div(1000.0)
-                    val sig = parts[1].toDoubleOrNull()
-                    if (freq != null && sig != null) SpectrumPoint(freq, sig) else null
-                }
         }
-    }
 
     companion object {
         private const val COMMAND_THROTTLE_MS = 125L
