@@ -5,8 +5,4 @@ enum class SignalUnit(val displayName: String) {
     DBUV("dBµV"),
     DBM("dBm");
 
-    companion object {
-        fun fromDisplayName(name: String): SignalUnit =
-            entries.firstOrNull { it.displayName == name } ?: DBF
-    }
 }

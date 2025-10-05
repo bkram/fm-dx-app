@@ -1,19 +1,17 @@
 package org.fmdx.app.audio
 
-import android.content.Context
 import android.content.Intent
 import androidx.annotation.OptIn
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import org.fmdx.app.BuildConfig
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import okhttp3.OkHttpClient
+import org.fmdx.app.BuildConfig
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -21,7 +19,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val preferences = getSharedPreferences("fm_dx_prefs", Context.MODE_PRIVATE)
+        val preferences = getSharedPreferences("fm_dx_prefs", MODE_PRIVATE)
         val networkBuffer = preferences.getInt("network_buffer", 2)
         val playerBuffer = preferences.getInt("player_buffer", 2000)
 

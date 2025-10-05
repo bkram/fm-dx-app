@@ -12,14 +12,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import org.fmdx.app.audio.PlaybackService
-import org.fmdx.app.data.ControlConnection
-import org.fmdx.app.data.FmDxRepository
-import org.fmdx.app.data.PluginConnection
-import org.fmdx.app.model.SignalUnit
-import org.fmdx.app.model.SpectrumPoint
-import org.fmdx.app.model.TunerInfo
-import org.fmdx.app.model.TunerState
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
@@ -32,6 +24,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import org.fmdx.app.audio.PlaybackService
+import org.fmdx.app.data.ControlConnection
+import org.fmdx.app.data.FmDxRepository
+import org.fmdx.app.data.PluginConnection
+import org.fmdx.app.model.SignalUnit
+import org.fmdx.app.model.SpectrumPoint
+import org.fmdx.app.model.TunerInfo
+import org.fmdx.app.model.TunerState
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -197,11 +197,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             refreshAudioStream(forcePlay = true)
         }
-    }
-
-    fun tuneStep(stepHz: Int) {
-        val currentKHz = _uiState.value.tunerState?.freqKHz ?: return
-        tuneToFrequency((currentKHz + stepHz) / 1000.0)
     }
 
     fun tuneToFrequency(valueMHz: Double) {

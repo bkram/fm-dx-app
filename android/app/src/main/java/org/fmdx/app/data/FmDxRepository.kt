@@ -1,10 +1,6 @@
 package org.fmdx.app.data
 
 import android.util.Log
-import org.fmdx.app.BuildConfig
-import org.fmdx.app.model.SpectrumPoint
-import org.fmdx.app.model.TunerInfo
-import org.fmdx.app.model.TunerState
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,11 +14,14 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.fmdx.app.BuildConfig
+import org.fmdx.app.model.SpectrumPoint
+import org.fmdx.app.model.TunerInfo
+import org.fmdx.app.model.TunerState
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import org.json.JSONObject
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 class FmDxRepository(
     val client: OkHttpClient,
@@ -201,23 +200,6 @@ class FmDxRepository(
         )
     }
 
-    suspend fun ping(url: String, userAgent: String): Long = withContext(ioDispatcher) {
-        logDebug("ping(): sending request to $url")
-        val httpUrl = url.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid URL")
-        val pingUrl = httpUrl.newBuilder()
-            .addPathSegments("ping")
-            .build()
-        val request = Request.Builder().url(pingUrl).header("User-Agent", userAgent).build()
-        val start = System.nanoTime()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("Ping failed: ${response.code}")
-            }
-        }
-        val end = System.nanoTime()
-        TimeUnit.NANOSECONDS.toMillis(end - start)
-    }
-
     suspend fun fetchSpectrumData(url: String, userAgent: String): List<SpectrumPoint>? = withContext(ioDispatcher) {
         logDebug("fetchSpectrumData(): requesting data from $url")
         val httpUrl = url.toHttpUrlOrNull() ?: return@withContext null
@@ -318,4 +300,3 @@ fun buildWebSocketUrl(url: String, vararg pathSegments: String): String {
     return normalized.replaceFirst("$httpScheme://", "$wsScheme://")
 }
 
-fun formatWebSocketUrl(url: String): String = buildWebSocketUrl(url)
