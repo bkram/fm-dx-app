@@ -478,19 +478,12 @@ private fun FrequencyControlsCard(
 
     val isControlReady = state.isConnected
 
-    val selectedFrequencyLabel = remember(selectedMHz, selectedDecimalIndex, stepKHz) {
-        val freqMHz = selectedMHz + (selectedDecimalIndex * stepKHz / 1000.0)
-        String.format(Locale.getDefault(), "%.2f MHz", freqMHz)
-    }
-
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-//            Text(text = stringResource(id = R.string.frequency), style = MaterialTheme.typography.titleLarge)
-            Text(text = selectedFrequencyLabel, style = MaterialTheme.typography.headlineMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -554,7 +547,6 @@ private fun TunerSection(
     currentPty: (TunerState?) -> String
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        FrequencyControlsCard(state, onTuneDirect)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -565,6 +557,7 @@ private fun TunerSection(
                 RdsRadiotextContent(state.tunerState)
             }
         }
+        FrequencyControlsCard(state, onTuneDirect)
     }
 }
 
@@ -803,13 +796,28 @@ private fun ControlToggleButton(
 
 @Composable
 private fun RdsPsPiContent(tuner: TunerState?) {
-    Text(
-        text = stringResource(id = R.string.rds_ps_label),
-        style = MaterialTheme.typography.labelLarge
-    )
-    AnnotatedErrorText(tuner?.ps ?: "", tuner?.psErrors ?: emptyList())
     val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
-    Text(text = stringResource(id = R.string.rds_pi_label, piValue))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(id = R.string.rds_ps_label),
+            style = MaterialTheme.typography.labelLarge
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            AnnotatedErrorText(
+                tuner?.ps ?: stringResource(id = R.string.default_value),
+                tuner?.psErrors ?: emptyList()
+            )
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = stringResource(id = R.string.rds_pi_label, piValue),
+            style = MaterialTheme.typography.labelLarge
+        )
+    }
 }
 
 @Composable
