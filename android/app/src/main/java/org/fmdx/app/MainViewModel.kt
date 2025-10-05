@@ -186,14 +186,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller?.stop()
         controller?.clearMediaItems()
         _uiState.update { currentState ->
-            UiState(
-                serverUrl = currentState.serverUrl,
-                signalUnit = currentState.signalUnit,
-                networkBuffer = currentState.networkBuffer,
-                playerBuffer = currentState.playerBuffer,
-                restartAudioOnTune = currentState.restartAudioOnTune,
-                spectrum = baselineSpectrum(),
-                statusMessage = "Disconnected"
+            currentState.copy(
+                isConnected = false,
+                isConnecting = false,
+                audioPlaying = false,
+                isScanning = false,
+                statusMessage = "Disconnected",
+                errorMessage = null
             )
         }
     }
