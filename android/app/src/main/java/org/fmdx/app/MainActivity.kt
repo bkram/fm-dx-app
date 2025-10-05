@@ -83,6 +83,7 @@ import org.fmdx.app.model.TunerState
 import org.fmdx.app.ui.theme.FmDxTheme
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -196,7 +197,6 @@ private fun MainScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
-        SectionTab(R.string.frequency) { FrequencySection(state, onTuneDirect) },
         SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, currentPty) },
         SectionTab(R.string.status) { StatusSection(state, formatSignal) },
         SectionTab(R.string.controls) {
@@ -423,14 +423,6 @@ private fun ServerSection(
 }
 
 @Composable
-private fun FrequencySection(
-    state: UiState,
-    onTuneDirect: (Double) -> Unit
-) {
-    FrequencyControlsCard(state, onTuneDirect)
-}
-
-@Composable
 private fun FrequencyControlsCard(
     state: UiState,
     onTuneDirect: (Double) -> Unit
@@ -447,24 +439,52 @@ private fun FrequencyControlsCard(
     var selectedMHz by rememberSaveable { mutableIntStateOf(0) }
     var selectedDecimalIndex by rememberSaveable { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        val mhz = currentFreqKHz / 1000
-        val decimalIndex = (currentFreqKHz % 1000) / stepKHz
+    val minMhz = minKHz / 1000
+    val maxMhz = maxKHz / 1000
+    val mhzSteps = maxMhz - minMhz + 1
+    val decimalSteps = max(1, 1000 / stepKHz)
+
+    fun minDecimalIndexFor(mhz: Int): Int {
+        if (decimalSteps <= 1) return 0
+        val minIndex = (minKHz % 1000) / stepKHz
+        val maxIndex = (maxKHz % 1000) / stepKHz
+        val raw = when {
+            mhz == minMhz && mhz == maxMhz -> min(minIndex, maxIndex)
+            mhz == minMhz -> minIndex
+            else -> 0
+        }
+        return raw.coerceIn(0, decimalSteps - 1)
+    }
+
+    fun maxDecimalIndexFor(mhz: Int): Int {
+        if (decimalSteps <= 1) return 0
+        val minIndex = (minKHz % 1000) / stepKHz
+        val maxIndex = (maxKHz % 1000) / stepKHz
+        val raw = when {
+            mhz == minMhz && mhz == maxMhz -> max(minIndex, maxIndex)
+            mhz == maxMhz -> maxIndex
+            else -> decimalSteps - 1
+        }
+        val minBound = minDecimalIndexFor(mhz)
+        return raw.coerceIn(minBound, decimalSteps - 1)
+    }
+
+    LaunchedEffect(currentFreqKHz, stepKHz, minMhz, maxMhz) {
+        val mhz = (currentFreqKHz / 1000).coerceIn(minMhz, maxMhz)
+        val minIndex = minDecimalIndexFor(mhz)
+        val maxIndex = maxDecimalIndexFor(mhz)
+        val decimalIndex = ((currentFreqKHz % 1000) / stepKHz).coerceIn(minIndex, maxIndex)
         selectedMHz = mhz
         selectedDecimalIndex = decimalIndex
     }
 
     // Debounced tuning
-    LaunchedEffect(selectedMHz, selectedDecimalIndex) {
+    LaunchedEffect(selectedMHz, selectedDecimalIndex, minKHz, maxKHz, stepKHz) {
         delay(400) // Debounce delay
-        val freqMHz = selectedMHz + (selectedDecimalIndex * stepKHz / 1000.0)
-        onTuneDirect(freqMHz)
+        val requestedKHz = selectedMHz * 1000 + selectedDecimalIndex * stepKHz
+        val clampedKHz = requestedKHz.coerceIn(minKHz, maxKHz)
+        onTuneDirect(clampedKHz / 1000.0)
     }
-
-    val minMhz = minKHz / 1000
-    val maxMhz = maxKHz / 1000
-    val mhzSteps = maxMhz - minMhz + 1
-    val decimalSteps = 1000 / stepKHz
 
     val mhzDisplayValues = remember(minMhz, maxMhz) {
         Array(mhzSteps) { index -> (minMhz + index).toString() }
@@ -476,7 +496,24 @@ private fun FrequencyControlsCard(
         }
     }
 
+    val minDecimalIndexForSelectedMhz = minDecimalIndexFor(selectedMHz)
+    val maxDecimalIndexForSelectedMhz = maxDecimalIndexFor(selectedMHz)
+
     val isControlReady = state.isConnected
+
+    LaunchedEffect(minMhz, maxMhz) {
+        val clampedMhz = selectedMHz.coerceIn(minMhz, maxMhz)
+        if (clampedMhz != selectedMHz) {
+            selectedMHz = clampedMhz
+        }
+    }
+
+    LaunchedEffect(selectedMHz, minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz) {
+        val clampedIndex = selectedDecimalIndex.coerceIn(minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz)
+        if (clampedIndex != selectedDecimalIndex) {
+            selectedDecimalIndex = clampedIndex
+        }
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -499,10 +536,14 @@ private fun FrequencyControlsCard(
                         }
                     },
                     update = { picker ->
+                        picker.displayedValues = null
                         picker.minValue = 0
                         picker.maxValue = mhzSteps - 1
                         picker.displayedValues = mhzDisplayValues
-                        picker.value = (selectedMHz - minMhz).coerceIn(0, mhzSteps - 1)
+                        val coercedValue = (selectedMHz - minMhz).coerceIn(0, mhzSteps - 1)
+                        if (picker.value != coercedValue) {
+                            picker.value = coercedValue
+                        }
                         picker.isEnabled = isControlReady
                         picker.setOnValueChangedListener { _, _, newVal ->
                             selectedMHz = newVal + minMhz
@@ -516,22 +557,39 @@ private fun FrequencyControlsCard(
                     factory = { context ->
                         NumberPicker(context).apply {
                             descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-                            wrapSelectorWheel = true
+                            wrapSelectorWheel = decimalSteps > 1
                         }
                     },
                     update = { picker ->
+                        picker.displayedValues = null
                         picker.minValue = 0
                         picker.maxValue = decimalSteps - 1
                         picker.displayedValues = decimalDisplayValues
-                        picker.value = selectedDecimalIndex.coerceIn(0, decimalSteps - 1)
+                        val coercedValue = selectedDecimalIndex.coerceIn(
+                            minDecimalIndexForSelectedMhz,
+                            maxDecimalIndexForSelectedMhz
+                        )
+                        if (picker.value != coercedValue) {
+                            picker.value = coercedValue
+                        }
+                        picker.wrapSelectorWheel = decimalSteps > 1
                         picker.isEnabled = isControlReady
-                        picker.setOnValueChangedListener { _, oldVal, newVal ->
-                            if (oldVal == decimalSteps - 1 && newVal == 0) {
-                                selectedMHz = (selectedMHz + 1).coerceAtMost(maxMhz)
-                            } else if (oldVal == 0 && newVal == decimalSteps - 1) {
-                                selectedMHz = (selectedMHz - 1).coerceAtLeast(minMhz)
+                        picker.setOnValueChangedListener { numberPicker, oldVal, newVal ->
+                            var adjustedNewVal = newVal
+                            if (decimalSteps > 1) {
+                                if (oldVal == decimalSteps - 1 && newVal == 0) {
+                                    selectedMHz = (selectedMHz + 1).coerceAtMost(maxMhz)
+                                } else if (oldVal == 0 && newVal == decimalSteps - 1) {
+                                    selectedMHz = (selectedMHz - 1).coerceAtLeast(minMhz)
+                                }
                             }
-                            selectedDecimalIndex = newVal
+                            val minIndexForCurrentMhz = minDecimalIndexFor(selectedMHz)
+                            val maxIndexForCurrentMhz = maxDecimalIndexFor(selectedMHz)
+                            adjustedNewVal = adjustedNewVal.coerceIn(minIndexForCurrentMhz, maxIndexForCurrentMhz)
+                            if (numberPicker.value != adjustedNewVal) {
+                                numberPicker.value = adjustedNewVal
+                            }
+                            selectedDecimalIndex = adjustedNewVal
                         }
                     }
                 )
