@@ -492,7 +492,7 @@ private fun FrequencyControlsCard(
 
     val decimalDisplayValues = remember(stepKHz) {
         Array(decimalSteps) { index ->
-            String.format(Locale.ROOT, ".%02d", (index * stepKHz) / 10)
+            String.format(Locale.ROOT, "%02d", (index * stepKHz) / 10)
         }
     }
 
