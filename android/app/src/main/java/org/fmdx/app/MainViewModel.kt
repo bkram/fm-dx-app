@@ -192,7 +192,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 audioPlaying = false,
                 isScanning = false,
                 statusMessage = "Disconnected",
-                errorMessage = null
+                errorMessage = null,
+                tunerInfo = null,
+                tunerState = null,
+                antennas = emptyList(),
+                spectrum = baselineSpectrum()
             )
         }
     }
