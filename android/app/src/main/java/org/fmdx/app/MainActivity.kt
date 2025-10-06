@@ -336,8 +336,8 @@ private fun ConnectionStatusIndicator(
         else -> stringResource(id = R.string.disconnected)
     }
     val indicatorColor = when {
-        isConnecting -> MaterialTheme.colorScheme.secondary
-        isConnected -> MaterialTheme.colorScheme.tertiary
+        isConnecting -> MaterialTheme.colorScheme.primary
+        isConnected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.error
     }
     Row(

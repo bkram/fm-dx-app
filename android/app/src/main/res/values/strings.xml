@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">FMDX Android</string>
+    <string name="app_name">fm-dx-app</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="start_scan">Spectrum Scan</string>
@@ -39,7 +39,7 @@
     <string name="settings_network_buffer_label">Network Buffer (chunks)</string>
     <string name="settings_player_buffer_label">Player Buffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
-    <string name="main_title">FMDX Android</string>
+    <string name="main_title">fm-dx-app</string>
     <string name="server_url">Server URL</string>
     <string name="default_value">--</string>
     <string name="rds_ps_label">PS: </string>
