@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -60,8 +64,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +76,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -82,8 +89,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
+import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.ui.theme.FmDxTheme
 import java.util.Locale
@@ -179,7 +188,7 @@ private fun FmDxApp(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun MainScreen(
     state: UiState,
@@ -199,7 +208,6 @@ private fun MainScreen(
     antennaLabel: () -> String,
     onShowSettings: () -> Unit
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
@@ -216,11 +224,31 @@ private fun MainScreen(
         SectionTab(R.string.station) { StationSection(state) },
         SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
     )
+    val tabStateController = rememberSaveable(
+        inputs = arrayOf(tabs.size),
+        saver = TabStateController.saver(tabs.size)
+    ) {
+        TabStateController(tabs.size)
+    }
+    val selectedTab = tabStateController.selectedTab
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.isConnected) {
         if (!state.isConnected) {
-            selectedTab = 0
+            tabStateController.reset()
+        }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != pagerState.currentPage) {
+            pagerState.animateScrollToPage(selectedTab)
+        }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collectLatest { page ->
+            tabStateController.onPagerPageChanged(page)
         }
     }
 
@@ -271,28 +299,38 @@ private fun MainScreen(
         ) {
             PrimaryScrollableTabRow(selectedTabIndex = selectedTab) {
                 tabs.forEachIndexed { index, tab ->
+                    val tabTag = "main_tab_${tab.titleRes}"
                     Tab(
+                        modifier = Modifier.testTag(tabTag),
                         selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        onClick = { tabStateController.selectTab(index) },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
                         enabled = index == 0 || state.isConnected
                     )
                 }
             }
-            Box(
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = state.isConnected,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                val scrollState = rememberScrollState()
-                Column(
+                    .testTag("main_sections_pager")
+            ) { page ->
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .fillMaxSize()
+                        .padding(16.dp)
                 ) {
-                    tabs[selectedTab].content()
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        tabs[page].content()
+                    }
                 }
             }
         }
@@ -341,6 +379,35 @@ private data class SectionTab(
     @param:StringRes val titleRes: Int,
     val content: @Composable () -> Unit
 )
+
+@VisibleForTesting
+internal class TabStateController(
+    private val pageCount: Int,
+    initialSelected: Int = 0
+) {
+    private var _selectedTab by mutableIntStateOf(initialSelected.coerceIn(0, maxOf(pageCount - 1, 0)))
+    val selectedTab: Int
+        get() = _selectedTab
+
+    fun selectTab(index: Int) {
+        _selectedTab = index.coerceIn(0, maxOf(pageCount - 1, 0))
+    }
+
+    fun onPagerPageChanged(page: Int) {
+        selectTab(page)
+    }
+
+    fun reset() {
+        _selectedTab = 0
+    }
+
+    companion object {
+        fun saver(pageCount: Int): Saver<TabStateController, Int> = Saver(
+            save = { it.selectedTab },
+            restore = { saved -> TabStateController(pageCount, saved) }
+        )
+    }
+}
 
 @Composable
 private fun ConnectionStatusIndicator(
@@ -393,52 +460,108 @@ private fun ServerSection(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.serverUrl,
+                    onValueChange = onUpdateUrl,
+                    label = { Text(stringResource(id = R.string.server_url)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        keyboardType = KeyboardType.Uri
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { onConnect() })
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (state.isConnected) {
+                        OutlinedButton(onClick = onConnect, enabled = false) {
+                            Text(text = stringResource(id = R.string.connect))
+                        }
+                        Button(onClick = onDisconnect) {
+                            Text(text = stringResource(id = R.string.disconnect))
+                        }
+                    } else {
+                        Button(onClick = onConnect, enabled = !state.isConnecting) {
+                            Text(text = stringResource(id = R.string.connect))
+                        }
+                        OutlinedButton(onClick = onDisconnect, enabled = false) {
+                            Text(text = stringResource(id = R.string.disconnect))
+                        }
+                    }
+                }
+                if (state.isConnecting) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                state.statusMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        if (state.isConnected) {
+            ServerInfoCard(tunerInfo = state.tunerInfo)
+        }
+    }
+}
+
+@Composable
+private fun ServerInfoCard(tunerInfo: TunerInfo?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = state.serverUrl,
-                onValueChange = onUpdateUrl,
-                label = { Text(stringResource(id = R.string.server_url)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done,
-                    keyboardType = KeyboardType.Uri
-                ),
-                keyboardActions = KeyboardActions(onDone = { onConnect() })
+            Text(
+                text = stringResource(id = R.string.server_info_title),
+                style = MaterialTheme.typography.titleMedium
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.isConnected) {
-                    OutlinedButton(onClick = onConnect, enabled = false) {
-                        Text(text = stringResource(id = R.string.connect))
-                    }
-                    Button(onClick = onDisconnect) {
-                        Text(text = stringResource(id = R.string.disconnect))
-                    }
-                } else {
-                    Button(onClick = onConnect, enabled = !state.isConnecting) {
-                        Text(text = stringResource(id = R.string.connect))
-                    }
-                    OutlinedButton(onClick = onDisconnect, enabled = false) {
-                        Text(text = stringResource(id = R.string.disconnect))
-                    }
-                }
-            }
-            if (state.isConnecting) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-            state.tunerInfo?.let { info ->
-                Text(text = info.tunerDescription, style = MaterialTheme.typography.bodyMedium)
-            }
-            state.statusMessage?.let { message ->
+            if (tunerInfo == null) {
                 Text(
-                    text = message,
+                    text = stringResource(id = R.string.server_info_unavailable),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else {
+                Text(
+                    text = stringResource(
+                        id = R.string.server_info_tuner_name,
+                        tunerInfo.tunerName
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = tunerInfo.tunerDescription,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                val activeAntennaName = tunerInfo.antennaNames.getOrNull(tunerInfo.activeAntenna)
+                if (activeAntennaName != null) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.server_info_active_antenna,
+                            activeAntennaName
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                if (tunerInfo.antennaNames.isNotEmpty()) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.server_info_antennas,
+                            tunerInfo.antennaNames.joinToString(", ")
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
