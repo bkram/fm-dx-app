@@ -72,6 +72,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -198,7 +199,6 @@ private fun MainScreen(
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
-        SectionTab(R.string.status) { StatusSection(state, formatSignal) },
         SectionTab(R.string.controls) {
             ControlButtons(
                 state,
@@ -612,7 +612,7 @@ private fun TunerSection(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 RdsPsPiContent(state.tunerState)
-                Text(text = stringResource(id = R.string.rds_pty_label, currentPty(state.tunerState)))
+                RdsPtyEccContent(state.tunerState, currentPty)
                 RdsRadiotextContent(state.tunerState)
             }
         }
@@ -902,16 +902,28 @@ private fun ControlToggleButton(
 }
 
 @Composable
+private fun RdsLabelText(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        textAlign = textAlign,
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
 private fun RdsPsPiContent(tuner: TunerState?) {
     val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = stringResource(id = R.string.rds_ps_label),
-            style = MaterialTheme.typography.labelLarge
-        )
+        RdsLabelText(text = stringResource(id = R.string.rds_ps_label))
         Spacer(modifier = Modifier.width(8.dp))
         Box(modifier = Modifier.weight(1f)) {
             AnnotatedErrorText(
@@ -920,21 +932,15 @@ private fun RdsPsPiContent(tuner: TunerState?) {
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = stringResource(id = R.string.rds_pi_label, piValue),
-            style = MaterialTheme.typography.labelLarge
-        )
+        RdsLabelText(text = stringResource(id = R.string.rds_pi_label, piValue))
     }
 }
 
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
-    Text(
-        text = stringResource(id = R.string.radiotext_label),
-        style = MaterialTheme.typography.labelLarge
-    )
-    AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList())
-    AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList())
+    RdsLabelText(text = stringResource(id = R.string.radiotext_label))
+    AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList(), minLines = 2)
+    AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList(), minLines = 2)
 }
 
 @Composable
@@ -950,30 +956,53 @@ private fun RdsSection(
         ) {
 //            Text(text = stringResource(id = R.string.rds), style = MaterialTheme.typography.titleLarge)
             RdsPsPiContent(tuner)
-            tuner?.ecc?.let { Text(text = stringResource(id = R.string.rds_ecc_label, it)) }
+            RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
-                Text(text = stringResource(id = R.string.country_label, country))
+                RdsLabelText(text = stringResource(id = R.string.country_label, country))
             }
             val flags = tuner?.flags()
             if (!flags.isNullOrBlank()) {
-                Text(text = stringResource(id = R.string.flags_label, flags))
+                RdsLabelText(text = stringResource(id = R.string.flags_label, flags))
             }
-            Text(text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)))
-            tuner?.diDisplay()?.let { Text(text = stringResource(id = R.string.rds_di_label, it)) }
+            tuner?.diDisplay()?.let { RdsLabelText(text = stringResource(id = R.string.rds_di_label, it)) }
             val afText =
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
                     ?: stringResource(id = R.string.none)
-            Text(text = stringResource(id = R.string.rds_af_label, afText))
+            RdsLabelText(text = stringResource(id = R.string.rds_af_label, afText))
             RdsRadiotextContent(tuner)
         }
     }
 }
 
 @Composable
-private fun AnnotatedErrorText(text: String, errors: List<Int>) {
+private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
+    val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "    "
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        RdsLabelText(text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)))
+        RdsLabelText(
+            text = stringResource(id = R.string.rds_ecc_label, ecc),
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+@Composable
+private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 1) {
+    val sanitized = text.ifEmpty { "\u00A0" }
+    val lineCount = sanitized.count { it == '\n' } + 1
+    val displayText = buildString {
+        append(sanitized)
+        repeat(max(0, minLines - lineCount)) {
+            append('\n')
+        }
+    }
     val annotated = buildAnnotatedString {
-        text.forEachIndexed { index, c ->
+        displayText.forEachIndexed { index, c ->
             val hasError = errors.getOrNull(index)?.let { it > 0 } ?: false
             if (hasError) {
                 withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))) {
@@ -996,49 +1025,55 @@ private fun StationSection(state: UiState) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 //            Text(text = stringResource(id = R.string.station), style = MaterialTheme.typography.titleLarge)
-            Text(
-                text = stringResource(
-                    id = R.string.station_name_label,
-                    tx?.name ?: stringResource(id = R.string.default_value)
-                )
+            StationDetailRow(
+                labelRes = R.string.station_name_label,
+                value = tx?.name ?: stringResource(id = R.string.default_value)
             )
-            Text(
-                text = stringResource(
-                    id = R.string.station_location_label,
-                    tx?.city ?: stringResource(id = R.string.default_value)
-                )
+            StationDetailRow(
+                labelRes = R.string.station_location_label,
+                value = tx?.city ?: stringResource(id = R.string.default_value)
             )
-            Text(
-                text = stringResource(
-                    id = R.string.station_country_label,
-                    tx?.countryCode ?: stringResource(id = R.string.default_value)
-                )
+            StationDetailRow(
+                labelRes = R.string.station_country_label,
+                value = tx?.countryCode ?: stringResource(id = R.string.default_value)
             )
-            Text(
-                text = stringResource(
-                    id = R.string.station_distance_label,
-                    tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
-                        ?: stringResource(
-                            id = R.string.default_value
-                        )))
-            Text(
-                text = stringResource(
-                    id = R.string.station_power_label,
-                    tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) } ?: stringResource(
-                        id = R.string.default_value
-                    )))
-            Text(
-                text = stringResource(
-                    id = R.string.station_polarization_label,
-                    tx?.polarization ?: stringResource(id = R.string.default_value)
-                )
+            StationDetailRow(
+                labelRes = R.string.station_distance_label,
+                value = tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
+                    ?: stringResource(id = R.string.default_value)
             )
-            Text(
-                text = stringResource(
-                    id = R.string.station_azimuth_label,
-                    tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
-                        ?: stringResource(id = R.string.default_value)))
+            StationDetailRow(
+                labelRes = R.string.station_power_label,
+                value = tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) }
+                    ?: stringResource(id = R.string.default_value)
+            )
+            StationDetailRow(
+                labelRes = R.string.station_polarization_label,
+                value = tx?.polarization ?: stringResource(id = R.string.default_value)
+            )
+            StationDetailRow(
+                labelRes = R.string.station_azimuth_label,
+                value = tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
+                    ?: stringResource(id = R.string.default_value)
+            )
         }
+    }
+}
+
+@Composable
+private fun StationDetailRow(@StringRes labelRes: Int, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RdsLabelText(
+            text = stringResource(id = labelRes, ""),
+            modifier = Modifier.padding(end = 8.dp)
+        )
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
