@@ -72,6 +72,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -198,7 +199,6 @@ private fun MainScreen(
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
-        SectionTab(R.string.status) { StatusSection(state, formatSignal) },
         SectionTab(R.string.controls) {
             ControlButtons(
                 state,
@@ -950,7 +950,7 @@ private fun RdsSection(
         ) {
 //            Text(text = stringResource(id = R.string.rds), style = MaterialTheme.typography.titleLarge)
             RdsPsPiContent(tuner)
-            tuner?.ecc?.let { Text(text = stringResource(id = R.string.rds_ecc_label, it)) }
+            RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
                 Text(text = stringResource(id = R.string.country_label, country))
@@ -959,7 +959,6 @@ private fun RdsSection(
             if (!flags.isNullOrBlank()) {
                 Text(text = stringResource(id = R.string.flags_label, flags))
             }
-            Text(text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)))
             tuner?.diDisplay()?.let { Text(text = stringResource(id = R.string.rds_di_label, it)) }
             val afText =
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
@@ -971,9 +970,30 @@ private fun RdsSection(
 }
 
 @Composable
+private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
+    val ecc = tuner?.ecc ?: stringResource(id = R.string.default_value)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)),
+            style = MaterialTheme.typography.labelLarge
+        )
+        Text(
+            text = stringResource(id = R.string.rds_ecc_label, ecc),
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+@Composable
 private fun AnnotatedErrorText(text: String, errors: List<Int>) {
+    val displayText = text.ifEmpty { "\u00A0" }
     val annotated = buildAnnotatedString {
-        text.forEachIndexed { index, c ->
+        displayText.forEachIndexed { index, c ->
             val hasError = errors.getOrNull(index)?.let { it > 0 } ?: false
             if (hasError) {
                 withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))) {
