@@ -56,6 +56,10 @@ android {
     lint {
         checkReleaseBuilds = false
     }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
     buildToolsVersion '36.1.0'
 }
 
@@ -71,6 +75,8 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling:1.9.2'
     debugImplementation 'androidx.compose.ui:ui-test-manifest:1.9.2'
 
+    implementation 'androidx.compose.foundation:foundation:1.9.2'
+
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     implementation 'com.squareup.okhttp3:okhttp:5.1.0'
     implementation 'org.jsoup:jsoup:1.21.2'
@@ -80,4 +86,6 @@ dependencies {
     implementation 'androidx.media3:media3-exoplayer:1.8.0'
     implementation 'androidx.media3:media3-extractor:1.8.0'
     implementation 'androidx.media3:media3-session:1.8.0'
+
+    testImplementation 'junit:junit:4.13.2'
 }
