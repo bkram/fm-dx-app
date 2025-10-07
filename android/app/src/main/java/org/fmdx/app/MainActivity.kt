@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -60,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerState
@@ -199,7 +203,6 @@ private fun MainScreen(
     antennaLabel: () -> String,
     onShowSettings: () -> Unit
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
         SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
@@ -216,11 +219,13 @@ private fun MainScreen(
         SectionTab(R.string.station) { StationSection(state) },
         SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
     )
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.isConnected) {
         if (!state.isConnected) {
-            selectedTab = 0
+            pagerState.animateScrollToPage(0)
         }
     }
 
@@ -269,11 +274,15 @@ private fun MainScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            PrimaryScrollableTabRow(selectedTabIndex = selectedTab) {
+            PrimaryScrollableTabRow(selectedTabIndex = pagerState.currentPage) {
                 tabs.forEachIndexed { index, tab ->
                     Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
                         enabled = index == 0 || state.isConnected
                     )
@@ -285,14 +294,20 @@ private fun MainScreen(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                val scrollState = rememberScrollState()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    tabs[selectedTab].content()
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = state.isConnected || pagerState.currentPage == 0
+                ) { page ->
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        tabs[page].content()
+                    }
                 }
             }
         }
