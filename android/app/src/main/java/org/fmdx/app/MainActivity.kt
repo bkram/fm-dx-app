@@ -917,6 +917,22 @@ private fun RdsLabelText(
 }
 
 @Composable
+private fun RdsLabelValueRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    valueContent: @Composable (Modifier) -> Unit
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RdsLabelText(text = label)
+        Spacer(modifier = Modifier.width(8.dp))
+        valueContent(Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun RdsPsPiContent(tuner: TunerState?) {
     val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
     Row(
@@ -932,7 +948,9 @@ private fun RdsPsPiContent(tuner: TunerState?) {
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
-        RdsLabelText(text = stringResource(id = R.string.rds_pi_label, piValue))
+        RdsLabelText(text = stringResource(id = R.string.rds_pi_label, ""))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = piValue)
     }
 }
 
@@ -959,17 +977,39 @@ private fun RdsSection(
             RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
-                RdsLabelText(text = stringResource(id = R.string.country_label, country))
+                RdsLabelValueRow(label = stringResource(id = R.string.country_label, "")) { valueModifier ->
+                    Text(
+                        text = country,
+                        modifier = valueModifier
+                    )
+                }
             }
             val flags = tuner?.flags()
             if (!flags.isNullOrBlank()) {
-                RdsLabelText(text = stringResource(id = R.string.flags_label, flags))
+                RdsLabelValueRow(label = stringResource(id = R.string.flags_label, "")) { valueModifier ->
+                    Text(
+                        text = flags,
+                        modifier = valueModifier
+                    )
+                }
             }
-            tuner?.diDisplay()?.let { RdsLabelText(text = stringResource(id = R.string.rds_di_label, it)) }
+            tuner?.diDisplay()?.let { di ->
+                RdsLabelValueRow(label = stringResource(id = R.string.rds_di_label, "")) { valueModifier ->
+                    Text(
+                        text = di,
+                        modifier = valueModifier
+                    )
+                }
+            }
             val afText =
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
                     ?: stringResource(id = R.string.none)
-            RdsLabelText(text = stringResource(id = R.string.rds_af_label, afText))
+            RdsLabelValueRow(label = stringResource(id = R.string.rds_af_label, "")) { valueModifier ->
+                Text(
+                    text = afText,
+                    modifier = valueModifier
+                )
+            }
             RdsRadiotextContent(tuner)
         }
     }
@@ -978,16 +1018,32 @@ private fun RdsSection(
 @Composable
 private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
     val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "    "
+    val pty = currentPty(tuner)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        RdsLabelText(text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)))
-        RdsLabelText(
-            text = stringResource(id = R.string.rds_ecc_label, ecc),
-            textAlign = TextAlign.End
-        )
+        RdsLabelValueRow(
+            label = stringResource(id = R.string.rds_pty_label, ""),
+            modifier = Modifier.weight(1f)
+        ) { valueModifier ->
+            Text(
+                text = pty,
+                modifier = valueModifier
+            )
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        RdsLabelValueRow(
+            label = stringResource(id = R.string.rds_ecc_label, ""),
+            modifier = Modifier.weight(1f)
+        ) { valueModifier ->
+            Text(
+                text = ecc,
+                modifier = valueModifier,
+                textAlign = TextAlign.End
+            )
+        }
     }
 }
 
