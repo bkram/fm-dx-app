@@ -52,6 +52,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,8 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -212,8 +216,16 @@ private fun MainScreen(
         SectionTab(R.string.station) { StationSection(state) },
         SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
     )
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
+
+    LaunchedEffect(state.isConnected) {
+        if (!state.isConnected) {
+            selectedTab = 0
+        }
+    }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = {
@@ -246,7 +258,8 @@ private fun MainScreen(
                             )
                         }
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -261,7 +274,8 @@ private fun MainScreen(
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        text = { Text(text = stringResource(id = tab.titleRes)) }
+                        text = { Text(text = stringResource(id = tab.titleRes)) },
+                        enabled = index == 0 || state.isConnected
                     )
                 }
             }
@@ -292,7 +306,9 @@ private fun SettingsScreen(
     onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit,
     onBack: () -> Unit
 ) {
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(id = R.string.settings)) },
@@ -303,7 +319,8 @@ private fun SettingsScreen(
                             contentDescription = stringResource(id = R.string.back)
                         )
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior
             )
         }
     ) { padding ->
@@ -381,7 +398,6 @@ private fun ServerSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-//            Text(text = stringResource(id = R.string.server), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
                 value = state.serverUrl,
                 onValueChange = onUpdateUrl,
@@ -395,14 +411,20 @@ private fun ServerSection(
                 keyboardActions = KeyboardActions(onDone = { onConnect() })
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onConnect, enabled = !state.isConnecting) {
-                    Text(text = stringResource(id = R.string.connect))
-                }
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    enabled = state.isConnected || state.isConnecting
-                ) {
-                    Text(text = stringResource(id = R.string.disconnect))
+                if (state.isConnected) {
+                    OutlinedButton(onClick = onConnect, enabled = false) {
+                        Text(text = stringResource(id = R.string.connect))
+                    }
+                    Button(onClick = onDisconnect) {
+                        Text(text = stringResource(id = R.string.disconnect))
+                    }
+                } else {
+                    Button(onClick = onConnect, enabled = !state.isConnecting) {
+                        Text(text = stringResource(id = R.string.connect))
+                    }
+                    OutlinedButton(onClick = onDisconnect, enabled = false) {
+                        Text(text = stringResource(id = R.string.disconnect))
+                    }
                 }
             }
             if (state.isConnecting) {
@@ -478,7 +500,6 @@ private fun FrequencyControlsCard(
         selectedDecimalIndex = decimalIndex
     }
 
-    // Debounced tuning
     LaunchedEffect(selectedMHz, selectedDecimalIndex, minKHz, maxKHz, stepKHz) {
         delay(400) // Debounce delay
         val requestedKHz = selectedMHz * 1000 + selectedDecimalIndex * stepKHz
@@ -521,6 +542,7 @@ private fun FrequencyControlsCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            RdsLabelText(text = stringResource(id = R.string.tuner))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -645,10 +667,12 @@ private fun SignalStrengthCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = stringResource(
-                    id = R.string.signal_label,
-                    formatSignal(tunerState, signalUnit)
-                ),
+                text = buildAnnotatedString {
+                    withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                        append(stringResource(id = R.string.signal_label_prefix))
+                    }
+                    append(formatSignal(tunerState, signalUnit))
+                },
                 style = MaterialTheme.typography.titleMedium
             )
             if (isConnecting || signalValue == null) {
@@ -684,7 +708,6 @@ private fun StatusSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-//            Text(text = stringResource(id = R.string.status), style = MaterialTheme.typography.titleLarge)
             if (state.isConnecting || signalValue == null) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             } else {
@@ -693,24 +716,28 @@ private fun StatusSection(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            Text(
-                text = stringResource(
-                    id = R.string.signal_label,
-                    formatSignal(state.tunerState, state.signalUnit)
-                )
-            )
-            Text(
-                text = stringResource(
-                    id = R.string.users_label,
-                    state.tunerState?.users?.toString()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RdsLabelText(text = stringResource(id = R.string.signal_label, ""))
+                Spacer(Modifier.width(8.dp))
+                Text(text = formatSignal(state.tunerState, state.signalUnit))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RdsLabelText(text = stringResource(id = R.string.users_label, ""))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = state.tunerState?.users?.toString()
                         ?: stringResource(id = R.string.default_value)
                 )
-            )
-            val audioStatus =
-                if (state.audioPlaying) stringResource(id = R.string.audio_playing) else stringResource(
-                    id = R.string.audio_stopped
-                )
-            Text(text = stringResource(id = R.string.audio_label, audioStatus))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RdsLabelText(text = stringResource(id = R.string.audio_label, ""))
+                Spacer(Modifier.width(8.dp))
+                val audioStatus =
+                    if (state.audioPlaying) stringResource(id = R.string.audio_playing) else stringResource(
+                        id = R.string.audio_stopped
+                    )
+                Text(text = audioStatus)
+            }
         }
     }
 }
@@ -731,9 +758,8 @@ private fun SettingsSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
+                RdsLabelText(
                     text = stringResource(id = R.string.settings_display_title),
-                    style = MaterialTheme.typography.titleLarge
                 )
                 SignalUnitSelector(
                     selected = signalUnit,
@@ -745,14 +771,14 @@ private fun SettingsSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
+                RdsLabelText(
                     text = stringResource(id = R.string.settings_audio_buffering_title),
-                    style = MaterialTheme.typography.titleLarge
                 )
                 Text(
                     text = stringResource(id = R.string.settings_audio_buffering_desc),
                     style = MaterialTheme.typography.bodyMedium
                 )
+                RdsLabelText(text = stringResource(id = R.string.settings_network_buffer_label))
                 OutlinedTextField(
                     value = networkBuffer,
                     onValueChange = { networkBuffer = it.filter { c -> c.isDigit() } },
@@ -760,6 +786,7 @@ private fun SettingsSection(
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
+                RdsLabelText(text = stringResource(id = R.string.settings_player_buffer_label))
                 OutlinedTextField(
                     value = playerBuffer,
                     onValueChange = { playerBuffer = it.filter { c -> c.isDigit() } },
@@ -779,7 +806,7 @@ private fun SettingsSection(
                         onCheckedChange = { restartAudioOnTune = it }
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(text = stringResource(id = R.string.settings_restart_audio_on_tune))
+                    RdsLabelText(text = stringResource(id = R.string.settings_restart_audio_on_tune))
                 }
             }
         }
@@ -806,9 +833,8 @@ private fun SignalUnitSelector(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
+        RdsLabelText(
             text = stringResource(id = R.string.signal_unit),
-            style = MaterialTheme.typography.labelLarge
         )
         OutlinedButton(onClick = { expanded = true }) {
             Text(text = selected.displayName)
@@ -843,7 +869,6 @@ private fun ControlButtons(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-//            Text(text = stringResource(id = R.string.controls), style = MaterialTheme.typography.titleLarge)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -870,11 +895,15 @@ private fun ControlButtons(
             ) {
                 Text(text = stringResource(id = R.string.antenna_switch))
             }
-            Text(
-                text = stringResource(id = R.string.antenna_current, antennaLabel()),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RdsLabelText(text = stringResource(id = R.string.antenna_current, ""))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = antennaLabel(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -959,9 +988,9 @@ private const val RDS_RADIOTEXT_LENGTH = 64
 private fun String.padToRadiotextLength(): String {
     val trimmed = take(RDS_RADIOTEXT_LENGTH)
     if (trimmed.isEmpty()) {
-        return "\u00A0".repeat(RDS_RADIOTEXT_LENGTH)
+        return " ".repeat(RDS_RADIOTEXT_LENGTH)
     }
-    return trimmed.padEnd(RDS_RADIOTEXT_LENGTH, '\u00A0')
+    return trimmed.padEnd(RDS_RADIOTEXT_LENGTH, ' ')
 }
 
 @Composable
@@ -990,7 +1019,6 @@ private fun RdsSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-//            Text(text = stringResource(id = R.string.rds), style = MaterialTheme.typography.titleLarge)
             RdsPsPiContent(tuner)
             RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
@@ -1035,39 +1063,34 @@ private fun RdsSection(
 
 @Composable
 private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
-    val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "    "
-    val pty = currentPty(tuner)
+    val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "   "
+    val pty = currentPty(tuner).trimStart()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        RdsLabelValueRow(
-            label = stringResource(id = R.string.rds_pty_label, ""),
-            modifier = Modifier.weight(1f)
-        ) { valueModifier ->
-            Text(
-                text = pty,
-                modifier = valueModifier
-            )
-        }
-        Spacer(modifier = Modifier.width(16.dp))
-        RdsLabelValueRow(
-            label = stringResource(id = R.string.rds_ecc_label, ""),
-            modifier = Modifier.weight(1f)
-        ) { valueModifier ->
-            Text(
-                text = ecc,
-                modifier = valueModifier,
-                textAlign = TextAlign.End
-            )
-        }
+        // Left: PTY label (green) + value
+        RdsLabelText(text = stringResource(id = R.string.rds_pty_label, ""))
+        Spacer(Modifier.width(8.dp))
+        Text(pty)
+
+        // Push right group to the edge
+        Spacer(Modifier.weight(1f))
+
+        // Right: ECC label (green) + value aligned to the right
+        RdsLabelText(text = stringResource(id = R.string.rds_ecc_label, ""))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = ecc,
+            textAlign = TextAlign.End
+        )
     }
 }
 
 @Composable
 private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 1) {
-    val sanitized = text.ifEmpty { "\u00A0" }
+    val sanitized = text.ifEmpty { " " }
     val annotated = buildAnnotatedString {
         sanitized.forEachIndexed { index, c ->
             val hasError = errors.getOrNull(index)?.let { it > 0 } ?: false
@@ -1091,7 +1114,6 @@ private fun StationSection(state: UiState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-//            Text(text = stringResource(id = R.string.station), style = MaterialTheme.typography.titleLarge)
             StationDetailRow(
                 labelRes = R.string.station_name_label,
                 value = tx?.name ?: stringResource(id = R.string.default_value)
@@ -1159,7 +1181,6 @@ private fun SpectrumSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-//                Text(text = stringResource(id = R.string.spectrum), style = MaterialTheme.typography.titleLarge)
                 if (state.isScanning) {
                     LinearProgressIndicator()
                 }
@@ -1169,7 +1190,7 @@ private fun SpectrumSection(
                 Button(onClick = onScan, enabled = !state.isScanning) {
                     Text(text = stringResource(id = R.string.start_scan))
                 }
-                OutlinedButton(onClick = onRefreshSpectrum) {
+                Button(onClick = onRefreshSpectrum) {
                     Text(text = stringResource(id = R.string.refresh_spectrum))
                 }
             }

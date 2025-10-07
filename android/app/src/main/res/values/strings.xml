@@ -1,12 +1,12 @@
 <resources>
-    <string name="app_name">fm-dx-app</string>
+    <string name="app_name">Fm-dx-app</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
-    <string name="start_scan">Spectrum Scan</string>
+    <string name="start_scan">Scan</string>
     <string name="play_audio">Play Audio</string>
     <string name="stop_audio">Stop Audio</string>
     <string name="audio_stopped">Stopped</string>
-    <string name="refresh_spectrum">Refresh Spectrum</string>
+    <string name="refresh_spectrum">Refresh</string>
     <string name="server">Server</string>
     <string name="frequency">Frequency</string>
     <string name="tuner">Tuner</string>
@@ -41,7 +41,7 @@
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
     <string name="main_title">fm-dx-app</string>
     <string name="server_url">Server URL</string>
-    <string name="default_value">--</string>
+    <string name="default_value"> </string>
     <string name="rds_ps_label">PS: </string>
     <string name="rds_pi_label">PI: %1$s</string>
     <string name="rds_ecc_label">ECC: %1$s</string>
@@ -63,4 +63,5 @@
     <string name="km_unit">%1$s km</string>
     <string name="kw_unit">%1$s kW</string>
     <string name="deg_unit">%1$s°</string>
+    <string name="signal_label_prefix">"Signal: "</string>
 </resources>
