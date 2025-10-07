@@ -954,11 +954,29 @@ private fun RdsPsPiContent(tuner: TunerState?) {
     }
 }
 
+private const val RDS_RADIOTEXT_LENGTH = 64
+
+private fun String.padToRadiotextLength(): String {
+    val trimmed = take(RDS_RADIOTEXT_LENGTH)
+    if (trimmed.isEmpty()) {
+        return "\u00A0".repeat(RDS_RADIOTEXT_LENGTH)
+    }
+    return trimmed.padEnd(RDS_RADIOTEXT_LENGTH, '\u00A0')
+}
+
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
     RdsLabelText(text = stringResource(id = R.string.radiotext_label))
-    AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList(), minLines = 2)
-    AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList(), minLines = 2)
+    AnnotatedErrorText(
+        text = (tuner?.rt0 ?: "").padToRadiotextLength(),
+        errors = tuner?.rt0Errors ?: emptyList(),
+        minLines = 2
+    )
+    AnnotatedErrorText(
+        text = (tuner?.rt1 ?: "").padToRadiotextLength(),
+        errors = tuner?.rt1Errors ?: emptyList(),
+        minLines = 2
+    )
 }
 
 @Composable
@@ -1050,15 +1068,8 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
 @Composable
 private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 1) {
     val sanitized = text.ifEmpty { "\u00A0" }
-    val lineCount = sanitized.count { it == '\n' } + 1
-    val displayText = buildString {
-        append(sanitized)
-        repeat(max(0, minLines - lineCount)) {
-            append('\n')
-        }
-    }
     val annotated = buildAnnotatedString {
-        displayText.forEachIndexed { index, c ->
+        sanitized.forEachIndexed { index, c ->
             val hasError = errors.getOrNull(index)?.let { it > 0 } ?: false
             if (hasError) {
                 withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))) {
@@ -1069,7 +1080,7 @@ private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 
             }
         }
     }
-    Text(text = annotated)
+    Text(text = annotated, minLines = minLines)
 }
 
 @Composable
