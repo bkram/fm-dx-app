@@ -612,7 +612,7 @@ private fun TunerSection(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 RdsPsPiContent(state.tunerState)
-                Text(text = stringResource(id = R.string.rds_pty_label, currentPty(state.tunerState)))
+                RdsPtyEccContent(state.tunerState, currentPty)
                 RdsRadiotextContent(state.tunerState)
             }
         }
@@ -904,14 +904,12 @@ private fun ControlToggleButton(
 @Composable
 private fun RdsPsPiContent(tuner: TunerState?) {
     val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
+    val piLabel = stringResource(id = R.string.rds_pi_label, "").trim()
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = stringResource(id = R.string.rds_ps_label),
-            style = MaterialTheme.typography.labelLarge
-        )
+        RdsHeaderText(text = stringResource(id = R.string.rds_ps_label).trim())
         Spacer(modifier = Modifier.width(8.dp))
         Box(modifier = Modifier.weight(1f)) {
             AnnotatedErrorText(
@@ -920,19 +918,20 @@ private fun RdsPsPiContent(tuner: TunerState?) {
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = stringResource(id = R.string.rds_pi_label, piValue),
-            style = MaterialTheme.typography.labelLarge
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RdsHeaderText(text = piLabel)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = piValue,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
     }
 }
 
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
-    Text(
-        text = stringResource(id = R.string.radiotext_label),
-        style = MaterialTheme.typography.labelLarge
-    )
+    RdsHeaderText(text = stringResource(id = R.string.radiotext_label))
     AnnotatedErrorText(tuner?.rt0 ?: "", tuner?.rt0Errors ?: emptyList())
     AnnotatedErrorText(tuner?.rt1 ?: "", tuner?.rt1Errors ?: emptyList())
 }
@@ -953,17 +952,31 @@ private fun RdsSection(
             RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
-                Text(text = stringResource(id = R.string.country_label, country))
+                RdsInfoRow(
+                    label = stringResource(id = R.string.country_label, "").trim(),
+                    value = country
+                )
             }
             val flags = tuner?.flags()
             if (!flags.isNullOrBlank()) {
-                Text(text = stringResource(id = R.string.flags_label, flags))
+                RdsInfoRow(
+                    label = stringResource(id = R.string.flags_label, "").trim(),
+                    value = flags
+                )
             }
-            tuner?.diDisplay()?.let { Text(text = stringResource(id = R.string.rds_di_label, it)) }
+            tuner?.diDisplay()?.let {
+                RdsInfoRow(
+                    label = stringResource(id = R.string.rds_di_label, "").trim(),
+                    value = it
+                )
+            }
             val afText =
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
                     ?: stringResource(id = R.string.none)
-            Text(text = stringResource(id = R.string.rds_af_label, afText))
+            RdsInfoRow(
+                label = stringResource(id = R.string.rds_af_label, "").trim(),
+                value = afText
+            )
             RdsRadiotextContent(tuner)
         }
     }
@@ -971,22 +984,58 @@ private fun RdsSection(
 
 @Composable
 private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
-    val ecc = tuner?.ecc ?: stringResource(id = R.string.default_value)
+    val ecc = tuner?.ecc?.takeIf { it.isNotBlank() } ?: stringResource(id = R.string.default_value)
+    val ptyLabel = stringResource(id = R.string.rds_pty_label, "").trim()
+    val eccLabel = stringResource(id = R.string.rds_ecc_label, "").trim()
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RdsHeaderText(text = ptyLabel)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = currentPty(tuner),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RdsHeaderText(text = eccLabel)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = ecc,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.End
+            )
+        }
+    }
+}
+
+@Composable
+private fun RdsInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RdsHeaderText(text = label)
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = stringResource(id = R.string.rds_pty_label, currentPty(tuner)),
-            style = MaterialTheme.typography.labelLarge
-        )
-        Text(
-            text = stringResource(id = R.string.rds_ecc_label, ecc),
-            style = MaterialTheme.typography.labelLarge,
-            textAlign = TextAlign.End
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge
         )
     }
+}
+
+@Composable
+private fun RdsHeaderText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.primary
+    )
 }
 
 @Composable
