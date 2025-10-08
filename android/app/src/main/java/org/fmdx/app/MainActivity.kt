@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -78,10 +76,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,9 +88,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -108,11 +103,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.launch
-import org.fmdx.app.BuildConfig
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -249,47 +241,47 @@ private fun MainScreen(
     onShowSettings: () -> Unit,
     onShowAbout: () -> Unit
 ) {
-    var isSpectrumDragging by remember { mutableStateOf(false) }
-    var showMenu by rememberSaveable { mutableStateOf(false) }
-    val tabs = buildList {
-        add(SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) })
-        if (state.isConnected) {
-            add(SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) })
-            add(
-                SectionTab(R.string.controls) {
-                    ControlButtons(
-                        state,
-                        onToggleEq,
-                        onToggleIms,
-                        onCycleAntenna,
-                        antennaLabel
-                    )
-                }
+    val tabs = listOf(
+        SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
+        SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
+        SectionTab(R.string.controls) {
+            ControlButtons(
+                state,
+                onToggleEq,
+                onToggleIms,
+                onCycleAntenna,
+                antennaLabel
             )
-            add(SectionTab(R.string.rds) { RdsSection(state, currentPty) })
-            add(SectionTab(R.string.station) { StationSection(state) })
-            add(
-                SectionTab(R.string.spectrum) {
-                    SpectrumSection(
-                        state = state,
-                        onScan = onScan,
-                        onRefreshSpectrum = onRefreshSpectrum,
-                        onTuneDirect = onTuneDirect,
-                        onDragStateChange = { dragging -> isSpectrumDragging = dragging }
-                    )
-                }
-            )
-        }
+        },
+        SectionTab(R.string.rds) { RdsSection(state, currentPty) },
+        SectionTab(R.string.station) { StationSection(state) },
+        SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
+    )
+    val tabStateController = rememberSaveable(
+        inputs = arrayOf(tabs.size),
+        saver = TabStateController.saver(tabs.size)
+    ) {
+        TabStateController(tabs.size)
     }
+    val selectedTab = tabStateController.selectedTab
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
-    val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.isConnected, tabs.size) {
         if (!state.isConnected) {
-            pagerState.scrollToPage(0)
-        } else if (pagerState.currentPage >= tabs.size) {
-            pagerState.scrollToPage(tabs.lastIndex)
+            tabStateController.reset()
+        }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != pagerState.currentPage) {
+            pagerState.animateScrollToPage(selectedTab)
+        }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collectLatest { page ->
+            tabStateController.onPagerPageChanged(page)
         }
     }
 
@@ -364,12 +356,8 @@ private fun MainScreen(
                     val tabTag = "main_tab_${tab.titleRes}"
                     Tab(
                         modifier = Modifier.testTag(tabTag),
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        },
+                        selected = selectedTab == index,
+                        onClick = { tabStateController.selectTab(index) },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
                         enabled = index == 0 || state.isConnected
                     )
@@ -377,27 +365,25 @@ private fun MainScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                userScrollEnabled = state.isConnected && !isSpectrumDragging,
+                userScrollEnabled = state.isConnected,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .testTag("main_sections_pager")
             ) { page ->
-                key(page) {
-                    Box(
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    val scrollState = rememberScrollState()
+                    Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
+                            .fillMaxWidth()
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        val scrollState = rememberScrollState()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(scrollState),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            tabs[page].content()
-                        }
+                        tabs[page].content()
                     }
                 }
             }
@@ -542,6 +528,35 @@ private data class SectionTab(
     @param:StringRes val titleRes: Int,
     val content: @Composable () -> Unit
 )
+
+@VisibleForTesting
+internal class TabStateController(
+    private val pageCount: Int,
+    initialSelected: Int = 0
+) {
+    private var _selectedTab by mutableIntStateOf(initialSelected.coerceIn(0, maxOf(pageCount - 1, 0)))
+    val selectedTab: Int
+        get() = _selectedTab
+
+    fun selectTab(index: Int) {
+        _selectedTab = index.coerceIn(0, maxOf(pageCount - 1, 0))
+    }
+
+    fun onPagerPageChanged(page: Int) {
+        selectTab(page)
+    }
+
+    fun reset() {
+        _selectedTab = 0
+    }
+
+    companion object {
+        fun saver(pageCount: Int): Saver<TabStateController, Int> = Saver(
+            save = { it.selectedTab },
+            restore = { saved -> TabStateController(pageCount, saved) }
+        )
+    }
+}
 
 @Composable
 private fun ConnectionStatusIndicator(
