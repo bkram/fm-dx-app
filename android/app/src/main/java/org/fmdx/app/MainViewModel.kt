@@ -35,6 +35,7 @@ import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -215,9 +216,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun tuneToFrequency(valueMHz: Double) {
-        val kHz = (valueMHz * 1000).toInt()
+        val kHz = (valueMHz * 1000.0).roundToInt()
         val currentKHz = _uiState.value.tunerState?.freqKHz
         if (kHz == currentKHz) return
+
+        _uiState.update { ui ->
+            val snappedMHz = ((valueMHz * 10.0).roundToInt() / 10.0)
+            ui.copy(
+                pendingFrequencyMHz = snappedMHz,
+                tunerState = ui.tunerState?.copy(
+                    freqMHz = snappedMHz
+                )
+            )
+        }
 
         sendCommand("T$kHz")
         resetRds()
@@ -329,6 +340,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         tunerState = state,
+                        pendingFrequencyMHz = null,
                         antennas = if (it.antennas.isEmpty() && it.tunerInfo != null) it.tunerInfo.antennaNames else it.antennas
                     )
                 }
@@ -541,5 +553,6 @@ data class UiState(
     val networkBuffer: Int = 8,
     val playerBuffer: Int = 1500,
     val restartAudioOnTune: Boolean = false,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val pendingFrequencyMHz: Double? = null
 )

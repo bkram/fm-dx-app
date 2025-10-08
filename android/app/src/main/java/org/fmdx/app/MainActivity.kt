@@ -2,6 +2,9 @@ package org.fmdx.app
 
 import android.os.Bundle
 import android.widget.NumberPicker
+import android.widget.TextView
+import android.graphics.Paint
+import androidx.annotation.ColorInt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -22,23 +25,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +55,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -53,8 +63,11 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
@@ -65,10 +78,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,16 +90,20 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -94,12 +111,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
+import org.fmdx.app.BuildConfig
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.ui.theme.FmDxTheme
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -163,32 +183,48 @@ private fun FmDxApp(
     onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
 
-    if (showSettings) {
-        SettingsScreen(
-            state = state,
-            onUpdateSettings = onUpdateSettings,
-            onBack = { showSettings = false }
-        )
-    } else {
-        MainScreen(
-            state = state,
-            snackbarHostState = snackbarHostState,
-            onUpdateUrl = onUpdateUrl,
-            onConnect = onConnect,
-            onDisconnect = onDisconnect,
-            onToggleAudio = onToggleAudio,
-            onTuneDirect = onTuneDirect,
-            onToggleEq = onToggleEq,
-            onToggleIms = onToggleIms,
-            onCycleAntenna = onCycleAntenna,
-            onScan = onScan,
-            onRefreshSpectrum = onRefreshSpectrum,
-            formatSignal = formatSignal,
-            currentPty = currentPty,
-            antennaLabel = antennaLabel,
-            onShowSettings = { showSettings = true }
-        )
+    when {
+        showSettings -> {
+            SettingsScreen(
+                state = state,
+                onUpdateSettings = onUpdateSettings,
+                onBack = { showSettings = false }
+            )
+        }
+
+        showAbout -> {
+            AboutScreen(onBack = { showAbout = false })
+        }
+
+        else -> {
+            MainScreen(
+                state = state,
+                snackbarHostState = snackbarHostState,
+                onUpdateUrl = onUpdateUrl,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect,
+                onToggleAudio = onToggleAudio,
+                onTuneDirect = onTuneDirect,
+                onToggleEq = onToggleEq,
+                onToggleIms = onToggleIms,
+                onCycleAntenna = onCycleAntenna,
+                onScan = onScan,
+                onRefreshSpectrum = onRefreshSpectrum,
+                formatSignal = formatSignal,
+                currentPty = currentPty,
+                antennaLabel = antennaLabel,
+                onShowSettings = {
+                    showAbout = false
+                    showSettings = true
+                },
+                onShowAbout = {
+                    showSettings = false
+                    showAbout = true
+                }
+            )
+        }
     }
 }
 
@@ -210,8 +246,11 @@ private fun MainScreen(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onShowSettings: () -> Unit
+    onShowSettings: () -> Unit,
+    onShowAbout: () -> Unit
 ) {
+    var isSpectrumDragging by remember { mutableStateOf(false) }
+    var showMenu by rememberSaveable { mutableStateOf(false) }
     val tabs = buildList {
         add(SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) })
         if (state.isConnected) {
@@ -229,34 +268,28 @@ private fun MainScreen(
             )
             add(SectionTab(R.string.rds) { RdsSection(state, currentPty) })
             add(SectionTab(R.string.station) { StationSection(state) })
-            add(SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) })
+            add(
+                SectionTab(R.string.spectrum) {
+                    SpectrumSection(
+                        state = state,
+                        onScan = onScan,
+                        onRefreshSpectrum = onRefreshSpectrum,
+                        onTuneDirect = onTuneDirect,
+                        onDragStateChange = { dragging -> isSpectrumDragging = dragging }
+                    )
+                }
+            )
         }
     }
-    val tabStateController = rememberSaveable(
-        inputs = arrayOf(tabs.size),
-        saver = TabStateController.saver(tabs.size)
-    ) {
-        TabStateController(tabs.size)
-    }
-    val selectedTab = tabStateController.selectedTab
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+    val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
-    LaunchedEffect(state.isConnected) {
+    LaunchedEffect(state.isConnected, tabs.size) {
         if (!state.isConnected) {
-            tabStateController.reset()
-        }
-    }
-
-    LaunchedEffect(selectedTab) {
-        if (selectedTab != pagerState.currentPage) {
-            pagerState.animateScrollToPage(selectedTab)
-        }
-    }
-
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collectLatest { page ->
-            tabStateController.onPagerPageChanged(page)
+            pagerState.scrollToPage(0)
+        } else if (pagerState.currentPage >= tabs.size) {
+            pagerState.scrollToPage(tabs.lastIndex)
         }
     }
 
@@ -287,11 +320,32 @@ private fun MainScreen(
                                 )
                             )
                         }
-                        IconButton(onClick = onShowSettings) {
-                            Icon(
-                                Icons.Default.Settings,
-                                contentDescription = stringResource(id = R.string.settings)
-                            )
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(id = R.string.menu)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(text = stringResource(id = R.string.settings)) },
+                                    onClick = {
+                                        showMenu = false
+                                        onShowSettings()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(text = stringResource(id = R.string.about)) },
+                                    onClick = {
+                                        showMenu = false
+                                        onShowAbout()
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -305,13 +359,17 @@ private fun MainScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            PrimaryScrollableTabRow(selectedTabIndex = selectedTab) {
+            PrimaryScrollableTabRow(selectedTabIndex = pagerState.currentPage) {
                 tabs.forEachIndexed { index, tab ->
                     val tabTag = "main_tab_${tab.titleRes}"
                     Tab(
                         modifier = Modifier.testTag(tabTag),
-                        selected = selectedTab == index,
-                        onClick = { tabStateController.selectTab(index) },
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
                         enabled = index == 0 || state.isConnected
                     )
@@ -319,7 +377,7 @@ private fun MainScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                userScrollEnabled = state.isConnected,
+                userScrollEnabled = state.isConnected && !isSpectrumDragging,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -385,39 +443,105 @@ private fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutScreen(onBack: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
+    val githubLabel = stringResource(id = R.string.about_github_link)
+    val githubUrl = stringResource(id = R.string.about_github_url)
+    val siteLabel = stringResource(id = R.string.about_site_link)
+    val siteUrl = stringResource(id = R.string.about_site_url)
+    val versionName = BuildConfig.VERSION_NAME
+    val versionCode = BuildConfig.VERSION_CODE
+    val versionLabel = stringResource(id = R.string.about_version, versionName, versionCode)
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = { Text(text = stringResource(id = R.string.about)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(id = R.string.back)
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.about_message),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = versionLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(
+                    modifier = Modifier.padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.about_links_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    ListItem(
+                        headlineContent = { Text(text = githubLabel) },
+                        supportingContent = { Text(text = githubUrl) },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(githubUrl) }
+                    )
+                    HorizontalDivider()
+                    ListItem(
+                        headlineContent = { Text(text = siteLabel) },
+                        supportingContent = { Text(text = siteUrl) },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(siteUrl) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 private data class SectionTab(
     @param:StringRes val titleRes: Int,
     val content: @Composable () -> Unit
 )
-
-@VisibleForTesting
-internal class TabStateController(
-    private val pageCount: Int,
-    initialSelected: Int = 0
-) {
-    private var _selectedTab by mutableIntStateOf(initialSelected.coerceIn(0, maxOf(pageCount - 1, 0)))
-    val selectedTab: Int
-        get() = _selectedTab
-
-    fun selectTab(index: Int) {
-        _selectedTab = index.coerceIn(0, maxOf(pageCount - 1, 0))
-    }
-
-    fun onPagerPageChanged(page: Int) {
-        selectTab(page)
-    }
-
-    fun reset() {
-        _selectedTab = 0
-    }
-
-    companion object {
-        fun saver(pageCount: Int): Saver<TabStateController, Int> = Saver(
-            save = { it.selectedTab },
-            restore = { saved -> TabStateController(pageCount, saved) }
-        )
-    }
-}
 
 @Composable
 private fun ConnectionStatusIndicator(
@@ -567,7 +691,9 @@ private fun FrequencyControlsCard(
     val provisionalMaxKHz = stateMaxKHz?.takeIf { it >= minKHz } ?: DEFAULT_MAX_FREQUENCY_KHZ
     val maxKHz = max(provisionalMaxKHz, minKHz)
 
-    val currentFreqKHz = state.tunerState?.freqKHz ?: minKHz
+    val currentFreqKHz = state.tunerState?.freqKHz
+        ?: state.pendingFrequencyMHz?.let { (it * 1000).roundToInt() }
+        ?: minKHz
 
     var selectedMHz by rememberSaveable { mutableIntStateOf(0) }
     var selectedDecimalIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -662,6 +788,7 @@ private fun FrequencyControlsCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // MHz Picker
+                val pickerTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
                 AndroidView(
                     modifier = Modifier.width(100.dp),
                     factory = { context ->
@@ -673,9 +800,10 @@ private fun FrequencyControlsCard(
                     update = { picker ->
                         val desiredMin = 0
                         val desiredMax = mhzSteps - 1
-                        val needsValuesReset = picker.displayedValues?.let { current ->
-                            current.size != mhzDisplayValues.size || !current.contentEquals(mhzDisplayValues)
-                        } ?: true
+                        val currentValues = picker.displayedValues
+                        val needsValuesReset = currentValues == null ||
+                            currentValues.size != mhzDisplayValues.size ||
+                            !currentValues.contentEquals(mhzDisplayValues)
                         if (needsValuesReset) {
                             picker.displayedValues = null
                         }
@@ -687,7 +815,9 @@ private fun FrequencyControlsCard(
                         }
                         if (needsValuesReset) {
                             picker.displayedValues = mhzDisplayValues
+                            picker.invalidate()
                         }
+                        picker.setTextColorCompat(pickerTextColor)
                         val coercedValue = (selectedMHz - minMhz).coerceIn(0, mhzSteps - 1)
                         if (picker.value != coercedValue) {
                             picker.value = coercedValue
@@ -711,9 +841,10 @@ private fun FrequencyControlsCard(
                     update = { picker ->
                         val desiredMin = 0
                         val desiredMax = decimalSteps - 1
-                        val needsValuesReset = picker.displayedValues?.let { current ->
-                            current.size != decimalDisplayValues.size || !current.contentEquals(decimalDisplayValues)
-                        } ?: true
+                        val currentValues = picker.displayedValues
+                        val needsValuesReset = currentValues == null ||
+                            currentValues.size != decimalDisplayValues.size ||
+                            !currentValues.contentEquals(decimalDisplayValues)
                         if (needsValuesReset) {
                             picker.displayedValues = null
                         }
@@ -725,7 +856,9 @@ private fun FrequencyControlsCard(
                         }
                         if (needsValuesReset) {
                             picker.displayedValues = decimalDisplayValues
+                            picker.invalidate()
                         }
+                        picker.setTextColorCompat(pickerTextColor)
                         val coercedValue = selectedDecimalIndex.coerceIn(
                             minDecimalIndexForSelectedMhz,
                             maxDecimalIndexForSelectedMhz
@@ -833,6 +966,25 @@ private const val SIGNAL_MAX_DBF = 130.0
 private const val DEFAULT_MIN_FREQUENCY_KHZ = 65000
 private const val DEFAULT_MAX_FREQUENCY_KHZ = 108_000
 private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
+
+@Suppress("DEPRECATION")
+private fun NumberPicker.setTextColorCompat(@ColorInt color: Int) {
+    try {
+        val selectorWheelPaintField = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
+        selectorWheelPaintField.isAccessible = true
+        val paint = selectorWheelPaintField.get(this) as? Paint
+        paint?.color = color
+    } catch (_: Exception) {
+        // ignore
+    }
+    for (i in 0 until childCount) {
+        val child = getChildAt(i)
+        if (child is TextView) {
+            child.setTextColor(color)
+        }
+    }
+    invalidate()
+}
 
 @Composable
 private fun StatusSection(
@@ -1140,19 +1292,49 @@ private fun String.padToRadiotextLength(): String {
 private fun RdsRadiotextContent(tuner: TunerState?) {
     RdsLabelText(text = stringResource(id = R.string.radiotext_label))
     val baseStyle = MaterialTheme.typography.bodyMedium
-    val radiotextStyle = baseStyle.copy(fontSize = baseStyle.fontSize * 0.8f)
-    AnnotatedErrorText(
-        text = (tuner?.rt0 ?: "").padToRadiotextLength(),
-        errors = tuner?.rt0Errors ?: emptyList(),
-        minLines = 2,
-        style = radiotextStyle
+    val radiotextStyle = baseStyle.copy(
+        fontSize = baseStyle.fontSize * 0.8f,
+        fontFamily = FontFamily.Monospace
     )
-    AnnotatedErrorText(
-        text = (tuner?.rt1 ?: "").padToRadiotextLength(),
-        errors = tuner?.rt1Errors ?: emptyList(),
-        minLines = 2,
-        style = radiotextStyle
-    )
+    val lineModifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(8.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            modifier = lineModifier,
+            tonalElevation = 1.dp,
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                AnnotatedErrorText(
+                    text = (tuner?.rt0 ?: "").padToRadiotextLength(),
+                    errors = tuner?.rt0Errors ?: emptyList(),
+                    minLines = 1,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    style = radiotextStyle
+                )
+            }
+        }
+        Surface(
+            modifier = lineModifier,
+            tonalElevation = 1.dp,
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                AnnotatedErrorText(
+                    text = (tuner?.rt1 ?: "").padToRadiotextLength(),
+                    errors = tuner?.rt1Errors ?: emptyList(),
+                    minLines = 1,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    style = radiotextStyle
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1240,6 +1422,9 @@ private fun AnnotatedErrorText(
     text: String,
     errors: List<Int>,
     minLines: Int = 1,
+    maxLines: Int = Int.MAX_VALUE,
+    softWrap: Boolean = true,
+    overflow: TextOverflow = TextOverflow.Clip,
     style: TextStyle = LocalTextStyle.current
 ) {
     val sanitized = text.ifEmpty { " " }
@@ -1255,7 +1440,14 @@ private fun AnnotatedErrorText(
             }
         }
     }
-    Text(text = annotated, minLines = minLines, style = style)
+    Text(
+        text = annotated,
+        minLines = minLines,
+        maxLines = maxLines,
+        softWrap = softWrap,
+        overflow = overflow,
+        style = style
+    )
 }
 
 @Composable
@@ -1322,7 +1514,9 @@ private fun StationDetailRow(@StringRes labelRes: Int, value: String) {
 private fun SpectrumSection(
     state: UiState,
     onScan: () -> Unit,
-    onRefreshSpectrum: () -> Unit
+    onRefreshSpectrum: () -> Unit,
+    onTuneDirect: (Double) -> Unit,
+    onDragStateChange: (Boolean) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1337,7 +1531,66 @@ private fun SpectrumSection(
                     LinearProgressIndicator()
                 }
             }
-            SpectrumGraph(points = state.spectrum, highlightFreq = state.tunerState?.freqMHz ?: 0.0)
+            val spectrum = state.spectrum
+            if (spectrum.isEmpty()) {
+                onDragStateChange(false)
+                Text(text = stringResource(id = R.string.spectrum_unavailable))
+            } else {
+                val minSpectrumFreq = spectrum.first().frequencyMHz
+                val maxSpectrumFreq = spectrum.last().frequencyMHz
+                val initialFreq = (state.tunerState?.freqMHz ?: state.pendingFrequencyMHz ?: minSpectrumFreq)
+                    .coerceIn(minSpectrumFreq, maxSpectrumFreq)
+
+                var sliderValue by remember(minSpectrumFreq, maxSpectrumFreq) { mutableStateOf(initialFreq) }
+
+                LaunchedEffect(state.tunerState?.freqMHz, minSpectrumFreq, maxSpectrumFreq) {
+                    state.tunerState?.freqMHz?.let { tuned ->
+                        sliderValue = tuned.coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                        onDragStateChange(false)
+                    }
+                }
+
+                val displayFreq = ((sliderValue * 10).roundToInt() / 10.0)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RdsLabelText(text = stringResource(id = R.string.spectrum_selected_frequency_label))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(id = R.string.spectrum_selected_frequency_value, displayFreq),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                SpectrumGraph(points = spectrum, highlightFreq = sliderValue)
+
+                val sliderInteraction = remember { MutableInteractionSource() }
+                val sliderDragging by sliderInteraction.collectIsDraggedAsState()
+                LaunchedEffect(sliderDragging) {
+                    onDragStateChange(sliderDragging)
+                }
+
+                val sliderSteps = ((maxSpectrumFreq - minSpectrumFreq) * 10).roundToInt().coerceAtLeast(1) - 1
+                Slider(
+                    value = sliderValue.toFloat(),
+                    onValueChange = { raw ->
+                        val snapped = ((raw * 10f).roundToInt() / 10.0)
+                            .coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                        sliderValue = snapped
+                    },
+                    onValueChangeFinished = {
+                        val snapped = ((sliderValue * 10).roundToInt() / 10.0)
+                        val currentFreq = state.tunerState?.freqMHz
+                        if (currentFreq == null || abs(currentFreq - snapped) >= 0.0001) {
+                            onTuneDirect(snapped)
+                        }
+                        onDragStateChange(false)
+                    },
+                    valueRange = minSpectrumFreq.toFloat()..maxSpectrumFreq.toFloat(),
+                    steps = sliderSteps.coerceAtLeast(0),
+                    interactionSource = sliderInteraction
+                )
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onScan, enabled = !state.isScanning) {
                     Text(text = stringResource(id = R.string.start_scan))
@@ -1351,14 +1604,17 @@ private fun SpectrumSection(
 }
 
 @Composable
-private fun SpectrumGraph(points: List<SpectrumPoint>, highlightFreq: Double) {
+private fun SpectrumGraph(
+    points: List<SpectrumPoint>,
+    highlightFreq: Double
+) {
     if (points.isEmpty()) {
         Text(text = stringResource(id = R.string.spectrum_unavailable))
         return
     }
     val minFreq = points.first().frequencyMHz
     val maxFreq = points.last().frequencyMHz
-    val freqSpan = (maxFreq - minFreq).coerceAtLeast(0.01)
+    val freqSpan = (maxFreq - minFreq).coerceAtLeast(0.0001)
     val maxSig = points.maxOfOrNull { it.signalDbf }?.coerceAtLeast(130.0) ?: 130.0
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
@@ -1377,8 +1633,8 @@ private fun SpectrumGraph(points: List<SpectrumPoint>, highlightFreq: Double) {
             drawRect(color = surfaceColor)
             val path = Path()
             points.forEachIndexed { index, point ->
-                val x =
-                    ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f) * width
+                val ratio = ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
+                val x = ratio * width
                 val normalized = point.signalDbf.coerceIn(0.0, maxSig).toFloat() / maxSig.toFloat()
                 val y = height - (normalized * height)
                 if (index == 0) {
@@ -1389,7 +1645,8 @@ private fun SpectrumGraph(points: List<SpectrumPoint>, highlightFreq: Double) {
             }
             drawPath(path, color = secondaryColor, style = Stroke(width = strokeWidthPx))
             if (highlightFreq in minFreq..maxFreq) {
-                val x = ((highlightFreq - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f) * width
+                val highlightRatio = ((highlightFreq - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
+                val x = highlightRatio * width
                 drawLine(
                     color = primaryColor,
                     start = androidx.compose.ui.geometry.Offset(x, 0f),
