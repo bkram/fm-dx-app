@@ -35,6 +35,7 @@ import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -156,7 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         errorMessage = null,
                         isConnected = true,
                         isConnecting = false,
-                        statusMessage = "Connected to $connectionName"
+                        statusMessage = null
                     )
                 }
                 startControlConnection(sanitized)
@@ -215,9 +216,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun tuneToFrequency(valueMHz: Double) {
-        val kHz = (valueMHz * 1000).toInt()
+        val kHz = (valueMHz * 1000.0).roundToInt()
         val currentKHz = _uiState.value.tunerState?.freqKHz
         if (kHz == currentKHz) return
+
+        _uiState.update { ui ->
+            val snappedMHz = ((valueMHz * 10.0).roundToInt() / 10.0)
+            ui.copy(
+                pendingFrequencyMHz = snappedMHz,
+                tunerState = ui.tunerState?.copy(
+                    freqMHz = snappedMHz
+                )
+            )
+        }
 
         sendCommand("T$kHz")
         resetRds()
@@ -329,6 +340,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         tunerState = state,
+                        pendingFrequencyMHz = null,
                         antennas = if (it.antennas.isEmpty() && it.tunerInfo != null) it.tunerInfo.antennaNames else it.antennas
                     )
                 }
@@ -399,7 +411,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun currentPty(state: TunerState?): String {
-        return state?.ptyDisplay(europeProgrammes) ?: "0/None"
+        val display = state?.ptyDisplay(europeProgrammes)?.trim() ?: ""
+        return if (display.equals("0/No PTY", ignoreCase = true) || display.equals("0/None", ignoreCase = true)) {
+            ""
+        } else {
+            display
+        }
     }
 
     fun antennaLabel(): String {
@@ -498,9 +515,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val signalUnitName = preferences.getString(KEY_SIGNAL_UNIT, SignalUnit.DBF.name)
         val signalUnit =
             SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
-        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 2)
-        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 2000)
-        val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, true)
+        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 8)
+        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 1500)
+        val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
@@ -533,8 +550,9 @@ data class UiState(
     val isScanning: Boolean = false,
     val errorMessage: String? = null,
     val signalUnit: SignalUnit = SignalUnit.DBF,
-    val networkBuffer: Int = 2,
-    val playerBuffer: Int = 2000,
-    val restartAudioOnTune: Boolean = true,
-    val statusMessage: String? = null
+    val networkBuffer: Int = 8,
+    val playerBuffer: Int = 1500,
+    val restartAudioOnTune: Boolean = false,
+    val statusMessage: String? = null,
+    val pendingFrequencyMHz: Double? = null
 )
