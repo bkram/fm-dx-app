@@ -64,9 +64,7 @@
     <string name="kw_unit">%1$s kW</string>
     <string name="deg_unit">%1$s°</string>
     <string name="signal_label_prefix">"Signal: "</string>
-    <string name="server_info_title">Server information</string>
-    <string name="server_info_tuner_name">Tuner: %1$s</string>
-    <string name="server_info_active_antenna">Active antenna: %1$s</string>
-    <string name="server_info_antennas">Antennas: %1$s</string>
+    <string name="server_info_title">Server Information</string>
+    <string name="server_info_tuner_name">%1$s</string>
     <string name="server_info_unavailable">No server details available.</string>
 </resources>

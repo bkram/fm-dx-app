@@ -61,6 +61,7 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,9 +77,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -88,8 +91,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -208,22 +212,26 @@ private fun MainScreen(
     antennaLabel: () -> String,
     onShowSettings: () -> Unit
 ) {
-    val tabs = listOf(
-        SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) },
-        SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) },
-        SectionTab(R.string.controls) {
-            ControlButtons(
-                state,
-                onToggleEq,
-                onToggleIms,
-                onCycleAntenna,
-                antennaLabel
+    val tabs = buildList {
+        add(SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) })
+        if (state.isConnected) {
+            add(SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) })
+            add(
+                SectionTab(R.string.controls) {
+                    ControlButtons(
+                        state,
+                        onToggleEq,
+                        onToggleIms,
+                        onCycleAntenna,
+                        antennaLabel
+                    )
+                }
             )
-        },
-        SectionTab(R.string.rds) { RdsSection(state, currentPty) },
-        SectionTab(R.string.station) { StationSection(state) },
-        SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) }
-    )
+            add(SectionTab(R.string.rds) { RdsSection(state, currentPty) })
+            add(SectionTab(R.string.station) { StationSection(state) })
+            add(SectionTab(R.string.spectrum) { SpectrumSection(state, onScan, onRefreshSpectrum) })
+        }
+    }
     val tabStateController = rememberSaveable(
         inputs = arrayOf(tabs.size),
         saver = TabStateController.saver(tabs.size)
@@ -317,19 +325,21 @@ private fun MainScreen(
                     .fillMaxWidth()
                     .testTag("main_sections_pager")
             ) { page ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    val scrollState = rememberScrollState()
-                    Column(
+                key(page) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(scrollState),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .fillMaxSize()
+                            .padding(16.dp)
                     ) {
-                        tabs[page].content()
+                        val scrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            tabs[page].content()
+                        }
                     }
                 }
             }
@@ -520,10 +530,7 @@ private fun ServerInfoCard(tunerInfo: TunerInfo?) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(id = R.string.server_info_title),
-                style = MaterialTheme.typography.titleMedium
-            )
+            RdsLabelText(text = stringResource(id = R.string.server_info_title))
             if (tunerInfo == null) {
                 Text(
                     text = stringResource(id = R.string.server_info_unavailable),
@@ -542,31 +549,12 @@ private fun ServerInfoCard(tunerInfo: TunerInfo?) {
                     text = tunerInfo.tunerDescription,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                val activeAntennaName = tunerInfo.antennaNames.getOrNull(tunerInfo.activeAntenna)
-                if (activeAntennaName != null) {
-                    Text(
-                        text = stringResource(
-                            id = R.string.server_info_active_antenna,
-                            activeAntennaName
-                        ),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                if (tunerInfo.antennaNames.isNotEmpty()) {
-                    Text(
-                        text = stringResource(
-                            id = R.string.server_info_antennas,
-                            tunerInfo.antennaNames.joinToString(", ")
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }
 }
 
+@OptIn(FlowPreview::class)
 @Composable
 private fun FrequencyControlsCard(
     state: UiState,
@@ -623,11 +611,14 @@ private fun FrequencyControlsCard(
         selectedDecimalIndex = decimalIndex
     }
 
-    LaunchedEffect(selectedMHz, selectedDecimalIndex, minKHz, maxKHz, stepKHz) {
-        delay(400) // Debounce delay
-        val requestedKHz = selectedMHz * 1000 + selectedDecimalIndex * stepKHz
-        val clampedKHz = requestedKHz.coerceIn(minKHz, maxKHz)
-        onTuneDirect(clampedKHz / 1000.0)
+    LaunchedEffect(minKHz, maxKHz, stepKHz) {
+        snapshotFlow { selectedMHz to selectedDecimalIndex }
+            .debounce(400)
+            .collectLatest { (mhz, decimalIndex) ->
+                val requestedKHz = mhz * 1000 + decimalIndex * stepKHz
+                val clampedKHz = requestedKHz.coerceIn(minKHz, maxKHz)
+                onTuneDirect(clampedKHz / 1000.0)
+            }
     }
 
     val mhzDisplayValues = remember(minMhz, maxMhz) {
@@ -665,7 +656,6 @@ private fun FrequencyControlsCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            RdsLabelText(text = stringResource(id = R.string.tuner))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -681,10 +671,23 @@ private fun FrequencyControlsCard(
                         }
                     },
                     update = { picker ->
-                        picker.displayedValues = null
-                        picker.minValue = 0
-                        picker.maxValue = mhzSteps - 1
-                        picker.displayedValues = mhzDisplayValues
+                        val desiredMin = 0
+                        val desiredMax = mhzSteps - 1
+                        val needsValuesReset = picker.displayedValues?.let { current ->
+                            current.size != mhzDisplayValues.size || !current.contentEquals(mhzDisplayValues)
+                        } ?: true
+                        if (needsValuesReset) {
+                            picker.displayedValues = null
+                        }
+                        if (picker.minValue != desiredMin) {
+                            picker.minValue = desiredMin
+                        }
+                        if (picker.maxValue != desiredMax) {
+                            picker.maxValue = desiredMax
+                        }
+                        if (needsValuesReset) {
+                            picker.displayedValues = mhzDisplayValues
+                        }
                         val coercedValue = (selectedMHz - minMhz).coerceIn(0, mhzSteps - 1)
                         if (picker.value != coercedValue) {
                             picker.value = coercedValue
@@ -706,10 +709,23 @@ private fun FrequencyControlsCard(
                         }
                     },
                     update = { picker ->
-                        picker.displayedValues = null
-                        picker.minValue = 0
-                        picker.maxValue = decimalSteps - 1
-                        picker.displayedValues = decimalDisplayValues
+                        val desiredMin = 0
+                        val desiredMax = decimalSteps - 1
+                        val needsValuesReset = picker.displayedValues?.let { current ->
+                            current.size != decimalDisplayValues.size || !current.contentEquals(decimalDisplayValues)
+                        } ?: true
+                        if (needsValuesReset) {
+                            picker.displayedValues = null
+                        }
+                        if (picker.minValue != desiredMin) {
+                            picker.minValue = desiredMin
+                        }
+                        if (picker.maxValue != desiredMax) {
+                            picker.maxValue = desiredMax
+                        }
+                        if (needsValuesReset) {
+                            picker.displayedValues = decimalDisplayValues
+                        }
                         val coercedValue = selectedDecimalIndex.coerceIn(
                             minDecimalIndexForSelectedMhz,
                             maxDecimalIndexForSelectedMhz
@@ -751,18 +767,21 @@ private fun TunerSection(
     currentPty: (TunerState?) -> String
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                RdsPsPiContent(state.tunerState)
-                RdsPtyEccContent(state.tunerState, currentPty)
-                RdsRadiotextContent(state.tunerState)
+        val tunerState = state.tunerState
+        if (tunerState != null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    RdsPsPiContent(tunerState)
+                    RdsPtyEccContent(tunerState, currentPty)
+                    RdsRadiotextContent(tunerState)
+                }
             }
         }
         SignalStrengthCard(
-            tunerState = state.tunerState,
+            tunerState = tunerState,
             signalUnit = state.signalUnit,
             isConnecting = state.isConnecting,
             formatSignal = formatSignal
@@ -1087,6 +1106,7 @@ private fun RdsLabelValueRow(
 @Composable
 private fun RdsPsPiContent(tuner: TunerState?) {
     val piValue = tuner?.pi ?: stringResource(id = R.string.default_value)
+    val displayPiValue = if (piValue.contains('?')) "    " else piValue
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1102,7 +1122,7 @@ private fun RdsPsPiContent(tuner: TunerState?) {
         Spacer(modifier = Modifier.width(16.dp))
         RdsLabelText(text = stringResource(id = R.string.rds_pi_label, ""))
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text = piValue)
+        Text(text = displayPiValue)
     }
 }
 
@@ -1119,15 +1139,19 @@ private fun String.padToRadiotextLength(): String {
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
     RdsLabelText(text = stringResource(id = R.string.radiotext_label))
+    val baseStyle = MaterialTheme.typography.bodyMedium
+    val radiotextStyle = baseStyle.copy(fontSize = baseStyle.fontSize * 0.8f)
     AnnotatedErrorText(
         text = (tuner?.rt0 ?: "").padToRadiotextLength(),
         errors = tuner?.rt0Errors ?: emptyList(),
-        minLines = 2
+        minLines = 2,
+        style = radiotextStyle
     )
     AnnotatedErrorText(
         text = (tuner?.rt1 ?: "").padToRadiotextLength(),
         errors = tuner?.rt1Errors ?: emptyList(),
-        minLines = 2
+        minLines = 2,
+        style = radiotextStyle
     )
 }
 
@@ -1212,7 +1236,12 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
 }
 
 @Composable
-private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 1) {
+private fun AnnotatedErrorText(
+    text: String,
+    errors: List<Int>,
+    minLines: Int = 1,
+    style: TextStyle = LocalTextStyle.current
+) {
     val sanitized = text.ifEmpty { " " }
     val annotated = buildAnnotatedString {
         sanitized.forEachIndexed { index, c ->
@@ -1226,7 +1255,7 @@ private fun AnnotatedErrorText(text: String, errors: List<Int>, minLines: Int = 
             }
         }
     }
-    Text(text = annotated, minLines = minLines)
+    Text(text = annotated, minLines = minLines, style = style)
 }
 
 @Composable

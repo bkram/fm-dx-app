@@ -156,7 +156,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         errorMessage = null,
                         isConnected = true,
                         isConnecting = false,
-                        statusMessage = "Connected to $connectionName"
+                        statusMessage = null
                     )
                 }
                 startControlConnection(sanitized)
@@ -399,7 +399,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun currentPty(state: TunerState?): String {
-        return state?.ptyDisplay(europeProgrammes) ?: "0/None"
+        val display = state?.ptyDisplay(europeProgrammes)?.trim() ?: ""
+        return if (display.equals("0/No PTY", ignoreCase = true) || display.equals("0/None", ignoreCase = true)) {
+            ""
+        } else {
+            display
+        }
     }
 
     fun antennaLabel(): String {
@@ -498,9 +503,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val signalUnitName = preferences.getString(KEY_SIGNAL_UNIT, SignalUnit.DBF.name)
         val signalUnit =
             SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
-        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 2)
-        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 2000)
-        val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, true)
+        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 8)
+        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 1500)
+        val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
@@ -533,8 +538,8 @@ data class UiState(
     val isScanning: Boolean = false,
     val errorMessage: String? = null,
     val signalUnit: SignalUnit = SignalUnit.DBF,
-    val networkBuffer: Int = 2,
-    val playerBuffer: Int = 2000,
-    val restartAudioOnTune: Boolean = true,
+    val networkBuffer: Int = 8,
+    val playerBuffer: Int = 1500,
+    val restartAudioOnTune: Boolean = false,
     val statusMessage: String? = null
 )
