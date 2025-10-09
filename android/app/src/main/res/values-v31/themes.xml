@@ -1,0 +1,9 @@
+<resources>
+
+    <style name="Theme.FmDxAndroid" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:statusBarColor">@color/md_theme_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_screen_empty</item>
+        <item name="android:windowSplashScreenBackground">@color/md_theme_background</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

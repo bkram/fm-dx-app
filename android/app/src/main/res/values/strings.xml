@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Fm-dx-app</string>
+    <string name="app_name">fm-dx-app</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="start_scan">Scan</string>
@@ -8,9 +8,7 @@
     <string name="audio_stopped">Stopped</string>
     <string name="refresh_spectrum">Refresh</string>
     <string name="server">Server</string>
-    <string name="frequency">Frequency</string>
     <string name="tuner">Tuner</string>
-    <string name="status">Status</string>
     <string name="controls">Controls</string>
     <string name="rds">RDS</string>
     <string name="station">Station</string>
@@ -40,6 +38,7 @@
     <string name="settings_display_title">Display</string>
     <string name="settings_audio_buffering_title">Audio Buffering</string>
     <string name="settings_audio_buffering_desc">Lower values can reduce latency, but may cause stuttering on unstable connections.</string>
+    <string name="settings_current_buffers">Current buffers: %1$d chunks / %2$d ms</string>
     <string name="settings_network_buffer_label">Network Buffer (chunks)</string>
     <string name="settings_player_buffer_label">Player Buffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
@@ -78,5 +77,5 @@
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
     <string name="about_version">Version %1$s (build %2$d)</string>
-    <string name="close">Close</string>
+    <string name="fgs_media_playback_reason" translatable="false">Required to keep audio playback running while you listen to live FM streams in the background.</string>
 </resources>

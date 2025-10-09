@@ -2,7 +2,5 @@
 
     <style name="Theme.FmDxAndroid" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:statusBarColor" tools:targetApi="l">@color/md_theme_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
-        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
     </style>
 </resources>

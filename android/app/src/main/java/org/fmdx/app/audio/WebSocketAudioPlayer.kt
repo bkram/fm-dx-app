@@ -28,8 +28,7 @@ import kotlin.math.min
 class WebSocketMediaSourceFactory(
     private val client: OkHttpClient,
     private val userAgent: String,
-    private val networkBuffer: Int,
-    private val onError: (Throwable) -> Unit
+    private val networkBuffer: Int
 ) : MediaSource.Factory {
 
     override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider): MediaSource.Factory {
@@ -44,7 +43,7 @@ class WebSocketMediaSourceFactory(
         val baseUrl = mediaItem.mediaId
         val wsUrl = buildWebSocketUrl(baseUrl, "audio")
         val dataSourceFactory = DataSource.Factory {
-            WebSocketStreamDataSource(client, wsUrl, userAgent, networkBuffer, onError)
+            WebSocketStreamDataSource(client, wsUrl, userAgent, networkBuffer)
         }
         val richMediaItem = mediaItem.buildUpon()
             .setUri(wsUrl)
@@ -69,8 +68,7 @@ private class WebSocketStreamDataSource(
     private val client: OkHttpClient,
     private val url: String,
     private val userAgent: String,
-    networkBuffer: Int,
-    private val onError: (Throwable) -> Unit
+    networkBuffer: Int
 ) : BaseDataSource(true) {
     private val queue = LinkedBlockingQueue<ByteArray>(networkBuffer)
     private val endMarker = ByteArray(0)
@@ -111,7 +109,6 @@ private class WebSocketStreamDataSource(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 failure = t
-                onError(t)
                 while (!queue.offer(endMarker)) {
                     queue.poll()
                 }

@@ -3,6 +3,7 @@ package org.fmdx.app
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.edit
@@ -26,6 +27,8 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import org.fmdx.app.audio.PlaybackService
+import org.fmdx.app.audio.MAX_NETWORK_BUFFER_CHUNKS
+import org.fmdx.app.audio.MIN_PLAYER_BUFFER_MS
 import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
@@ -45,6 +48,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = FmDxRepository(okHttpClient)
 
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val preferenceListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                KEY_NETWORK_BUFFER,
+                KEY_PLAYER_BUFFER -> refreshBufferSettings()
+            }
+        }
 
     private val _uiState = MutableStateFlow(UiState(spectrum = baselineSpectrum()))
     val uiState: StateFlow<UiState> = _uiState
@@ -72,8 +82,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
         restorePersistedServerUrl()
         restorePersistedSettings()
+        refreshBufferSettings()
         initializeMediaController()
     }
 
@@ -106,15 +118,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playerBuffer: Int,
         restartAudioOnTune: Boolean
     ) {
+        val clampedNetwork = networkBuffer.coerceIn(1, MAX_NETWORK_BUFFER_CHUNKS)
+        val clampedPlayer = playerBuffer.coerceAtLeast(MIN_PLAYER_BUFFER_MS)
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
-                networkBuffer = networkBuffer,
-                playerBuffer = playerBuffer,
+                networkBuffer = clampedNetwork,
+                playerBuffer = clampedPlayer,
                 restartAudioOnTune = restartAudioOnTune
             )
         }
-        persistSettings(signalUnit, networkBuffer, playerBuffer, restartAudioOnTune)
+        persistSettings(signalUnit, clampedNetwork, clampedPlayer, restartAudioOnTune)
     }
 
     fun connect() {
@@ -146,7 +160,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 logDebug("connect(): fetching tuner info")
                 val info = repository.fetchTunerInfo(sanitized, BuildConfig.USER_AGENT)
-                val connectionName = info.tunerName.takeIf { it.isNotBlank() } ?: sanitized
                 logDebug("connect(): tuner info resolved -> name=${info.tunerName}, description=${info.tunerDescription}")
                 _uiState.update {
                     it.copy(
@@ -395,9 +408,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        super.onCleared()
+        preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         disconnect()
         controllerFuture?.let { MediaController.releaseFuture(it) }
+        super.onCleared()
     }
 
     fun formatSignal(state: TunerState?, unit: SignalUnit): String {
@@ -515,8 +529,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val signalUnitName = preferences.getString(KEY_SIGNAL_UNIT, SignalUnit.DBF.name)
         val signalUnit =
             SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
-        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 8)
-        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 1500)
+        val persistedNetworkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 8)
+        val persistedPlayerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 1500)
+        val networkBuffer = persistedNetworkBuffer.coerceIn(1, MAX_NETWORK_BUFFER_CHUNKS)
+        val playerBuffer = persistedPlayerBuffer.coerceAtLeast(MIN_PLAYER_BUFFER_MS)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
         _uiState.update {
             it.copy(
@@ -524,6 +540,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 networkBuffer = networkBuffer,
                 playerBuffer = playerBuffer,
                 restartAudioOnTune = restartAudioOnTune
+            )
+        }
+    }
+
+    private fun refreshBufferSettings() {
+        val networkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, _uiState.value.networkBuffer)
+            .coerceIn(1, MAX_NETWORK_BUFFER_CHUNKS)
+        val playerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, _uiState.value.playerBuffer)
+            .coerceAtLeast(MIN_PLAYER_BUFFER_MS)
+        _uiState.update {
+            it.copy(
+                networkBuffer = networkBuffer,
+                playerBuffer = playerBuffer
             )
         }
     }

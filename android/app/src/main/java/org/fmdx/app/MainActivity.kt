@@ -1,9 +1,9 @@
 package org.fmdx.app
 
+import android.content.Context
 import android.os.Bundle
 import android.widget.NumberPicker
 import android.widget.TextView
-import android.graphics.Paint
 import androidx.annotation.ColorInt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,7 +12,10 @@ import androidx.annotation.StringRes
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.MarqueeAnimationMode
+import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,6 +79,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -107,6 +111,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -128,7 +134,12 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splashScreen.setOnExitAnimationListener { splashScreenView ->
+            // Remove the system fade-out animation so the UI appears immediately on launch.
+            splashScreenView.remove()
+        }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val snackbarHostState = remember { SnackbarHostState() }
@@ -252,9 +263,23 @@ private fun MainScreen(
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     val tabs = buildList {
-        add(SectionTab(R.string.server) { ServerSection(state, onUpdateUrl, onConnect, onDisconnect) })
+        add(SectionTab(R.string.server) {
+            ServerSection(
+                state,
+                onUpdateUrl,
+                onConnect,
+                onDisconnect
+            )
+        })
         if (state.isConnected) {
-            add(SectionTab(R.string.tuner) { TunerSection(state, onTuneDirect, formatSignal, currentPty) })
+            add(SectionTab(R.string.tuner) {
+                TunerSection(
+                    state,
+                    onTuneDirect,
+                    formatSignal,
+                    currentPty
+                )
+            })
             add(
                 SectionTab(R.string.controls) {
                     ControlButtons(
@@ -770,7 +795,10 @@ private fun FrequencyControlsCard(
     }
 
     LaunchedEffect(selectedMHz, minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz) {
-        val clampedIndex = selectedDecimalIndex.coerceIn(minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz)
+        val clampedIndex = selectedDecimalIndex.coerceIn(
+            minDecimalIndexForSelectedMhz,
+            maxDecimalIndexForSelectedMhz
+        )
         if (clampedIndex != selectedDecimalIndex) {
             selectedDecimalIndex = clampedIndex
         }
@@ -792,7 +820,7 @@ private fun FrequencyControlsCard(
                 AndroidView(
                     modifier = Modifier.width(100.dp),
                     factory = { context ->
-                        NumberPicker(context).apply {
+                        StyledNumberPicker(context).apply {
                             descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
                             wrapSelectorWheel = false
                         }
@@ -802,8 +830,8 @@ private fun FrequencyControlsCard(
                         val desiredMax = mhzSteps - 1
                         val currentValues = picker.displayedValues
                         val needsValuesReset = currentValues == null ||
-                            currentValues.size != mhzDisplayValues.size ||
-                            !currentValues.contentEquals(mhzDisplayValues)
+                                currentValues.size != mhzDisplayValues.size ||
+                                !currentValues.contentEquals(mhzDisplayValues)
                         if (needsValuesReset) {
                             picker.displayedValues = null
                         }
@@ -833,7 +861,7 @@ private fun FrequencyControlsCard(
                 AndroidView(
                     modifier = Modifier.width(100.dp),
                     factory = { context ->
-                        NumberPicker(context).apply {
+                        StyledNumberPicker(context).apply {
                             descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
                             wrapSelectorWheel = decimalSteps > 1
                         }
@@ -843,8 +871,8 @@ private fun FrequencyControlsCard(
                         val desiredMax = decimalSteps - 1
                         val currentValues = picker.displayedValues
                         val needsValuesReset = currentValues == null ||
-                            currentValues.size != decimalDisplayValues.size ||
-                            !currentValues.contentEquals(decimalDisplayValues)
+                                currentValues.size != decimalDisplayValues.size ||
+                                !currentValues.contentEquals(decimalDisplayValues)
                         if (needsValuesReset) {
                             picker.displayedValues = null
                         }
@@ -879,7 +907,10 @@ private fun FrequencyControlsCard(
                             }
                             val minIndexForCurrentMhz = minDecimalIndexFor(selectedMHz)
                             val maxIndexForCurrentMhz = maxDecimalIndexFor(selectedMHz)
-                            adjustedNewVal = adjustedNewVal.coerceIn(minIndexForCurrentMhz, maxIndexForCurrentMhz)
+                            adjustedNewVal = adjustedNewVal.coerceIn(
+                                minIndexForCurrentMhz,
+                                maxIndexForCurrentMhz
+                            )
                             if (numberPicker.value != adjustedNewVal) {
                                 numberPicker.value = adjustedNewVal
                             }
@@ -901,30 +932,31 @@ private fun TunerSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         val tunerState = state.tunerState
-        if (tunerState != null) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (tunerState != null) {
                     RdsPsPiContent(tunerState)
                     RdsPtyEccContent(tunerState, currentPty)
                     RdsRadiotextContent(tunerState)
+                    HorizontalDivider()
                 }
+                SignalStrengthInfo(
+                    tunerState = tunerState,
+                    signalUnit = state.signalUnit,
+                    isConnecting = state.isConnecting,
+                    formatSignal = formatSignal
+                )
             }
         }
-        SignalStrengthCard(
-            tunerState = tunerState,
-            signalUnit = state.signalUnit,
-            isConnecting = state.isConnecting,
-            formatSignal = formatSignal
-        )
         FrequencyControlsCard(state, onTuneDirect)
     }
 }
 
 @Composable
-private fun SignalStrengthCard(
+private fun SignalStrengthInfo(
     tunerState: TunerState?,
     signalUnit: SignalUnit,
     isConnecting: Boolean,
@@ -936,28 +968,23 @@ private fun SignalStrengthCard(
         ?.div(SIGNAL_MAX_DBF)
         ?.toFloat()
         ?: 0f
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
-                        append(stringResource(id = R.string.signal_label_prefix))
-                    }
-                    append(formatSignal(tunerState, signalUnit))
-                },
-                style = MaterialTheme.typography.titleMedium
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = buildAnnotatedString {
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                    append(stringResource(id = R.string.signal_label_prefix))
+                }
+                append(formatSignal(tunerState, signalUnit))
+            },
+            style = MaterialTheme.typography.titleMedium
+        )
+        if (isConnecting || signalValue == null) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth()
             )
-            if (isConnecting || signalValue == null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
         }
     }
 }
@@ -968,22 +995,53 @@ private const val DEFAULT_MAX_FREQUENCY_KHZ = 108_000
 private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
 
 @Suppress("DEPRECATION")
-private fun NumberPicker.setTextColorCompat(@ColorInt color: Int) {
-    try {
-        val selectorWheelPaintField = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
-        selectorWheelPaintField.isAccessible = true
-        val paint = selectorWheelPaintField.get(this) as? Paint
-        paint?.color = color
-    } catch (_: Exception) {
-        // ignore
-    }
-    for (i in 0 until childCount) {
-        val child = getChildAt(i)
-        if (child is TextView) {
-            child.setTextColor(color)
+private class StyledNumberPicker(context: Context) : NumberPicker(context) {
+    var enforcedTextColor: Int? = null
+        set(value) {
+            field = value
+            value?.let(::applyColor)
         }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        enforcedTextColor?.let(::applyColor)
+        super.onDraw(canvas)
     }
-    invalidate()
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        enforcedTextColor?.let(::applyColor)
+    }
+
+    private fun applyColor(color: Int) {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child is TextView) {
+                child.setTextColor(color)
+            }
+        }
+        invalidate()
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun NumberPicker.setTextColorCompat(@ColorInt color: Int) {
+    if (this is StyledNumberPicker) {
+        enforcedTextColor = color
+        return
+    }
+    fun applyColor() {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child is TextView) {
+                child.setTextColor(color)
+            }
+        }
+        invalidate()
+    }
+
+    applyColor()
+    doOnLayout { applyColor() }
+    post { applyColor() }
 }
 
 @Composable
@@ -1071,6 +1129,15 @@ private fun SettingsSection(
                 Text(
                     text = stringResource(id = R.string.settings_audio_buffering_desc),
                     style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(
+                        id = R.string.settings_current_buffers,
+                        state.networkBuffer,
+                        state.playerBuffer
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 RdsLabelText(text = stringResource(id = R.string.settings_network_buffer_label))
                 OutlinedTextField(
@@ -1280,14 +1347,23 @@ private fun RdsPsPiContent(tuner: TunerState?) {
 
 private const val RDS_RADIOTEXT_LENGTH = 64
 
-private fun String.padToRadiotextLength(): String {
-    val trimmed = take(RDS_RADIOTEXT_LENGTH)
-    if (trimmed.isEmpty()) {
-        return " ".repeat(RDS_RADIOTEXT_LENGTH)
+private const val RDS_RADIOTEXT_LOOP_SPACER = 6
+
+private fun buildRadiotextDisplay(line: String?, errors: List<Int>): Pair<String, List<Int>> {
+    val captured = line.orEmpty().take(RDS_RADIOTEXT_LENGTH)
+    val trimmed = captured.trimEnd()
+    val spacer = " ".repeat(RDS_RADIOTEXT_LOOP_SPACER)
+    val display = if (trimmed.isEmpty()) spacer else trimmed + spacer
+    val effectiveErrors = errors.take(trimmed.length)
+    val paddedErrors = if (display.length > effectiveErrors.size) {
+        effectiveErrors + List(display.length - effectiveErrors.size) { 0 }
+    } else {
+        effectiveErrors
     }
-    return trimmed.padEnd(RDS_RADIOTEXT_LENGTH, ' ')
+    return display to paddedErrors
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
     RdsLabelText(text = stringResource(id = R.string.radiotext_label))
@@ -1299,21 +1375,37 @@ private fun RdsRadiotextContent(tuner: TunerState?) {
     val lineModifier = Modifier
         .fillMaxWidth()
         .clip(RoundedCornerShape(8.dp))
+    val marqueeModifier = Modifier
+        .fillMaxWidth()
+        .basicMarquee(
+            iterations = Int.MAX_VALUE,
+            animationMode = MarqueeAnimationMode.Immediately,
+            repeatDelayMillis = 0,
+            initialDelayMillis = 0,
+            spacing = MarqueeSpacing.fractionOfContainer(0f)
+        )
+    val (rt0Text, rt0Errors) = buildRadiotextDisplay(tuner?.rt0, tuner?.rt0Errors ?: emptyList())
+    val (rt1Text, rt1Errors) = buildRadiotextDisplay(tuner?.rt1, tuner?.rt1Errors ?: emptyList())
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
             modifier = lineModifier,
             tonalElevation = 1.dp,
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
                 AnnotatedErrorText(
-                    text = (tuner?.rt0 ?: "").padToRadiotextLength(),
-                    errors = tuner?.rt0Errors ?: emptyList(),
+                    text = rt0Text,
+                    errors = rt0Errors,
                     minLines = 1,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip,
-                    style = radiotextStyle
+                    style = radiotextStyle,
+                    modifier = marqueeModifier
                 )
             }
         }
@@ -1322,15 +1414,20 @@ private fun RdsRadiotextContent(tuner: TunerState?) {
             tonalElevation = 1.dp,
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
                 AnnotatedErrorText(
-                    text = (tuner?.rt1 ?: "").padToRadiotextLength(),
-                    errors = tuner?.rt1Errors ?: emptyList(),
+                    text = rt1Text,
+                    errors = rt1Errors,
                     minLines = 1,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip,
-                    style = radiotextStyle
+                    style = radiotextStyle,
+                    modifier = marqueeModifier
                 )
             }
         }
@@ -1352,7 +1449,12 @@ private fun RdsSection(
             RdsPtyEccContent(tuner, currentPty)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
-                RdsLabelValueRow(label = stringResource(id = R.string.country_label, "")) { valueModifier ->
+                RdsLabelValueRow(
+                    label = stringResource(
+                        id = R.string.country_label,
+                        ""
+                    )
+                ) { valueModifier ->
                     Text(
                         text = country,
                         modifier = valueModifier
@@ -1361,7 +1463,12 @@ private fun RdsSection(
             }
             val flags = tuner?.flags()
             if (!flags.isNullOrBlank()) {
-                RdsLabelValueRow(label = stringResource(id = R.string.flags_label, "")) { valueModifier ->
+                RdsLabelValueRow(
+                    label = stringResource(
+                        id = R.string.flags_label,
+                        ""
+                    )
+                ) { valueModifier ->
                     Text(
                         text = flags,
                         modifier = valueModifier
@@ -1369,7 +1476,12 @@ private fun RdsSection(
                 }
             }
             tuner?.diDisplay()?.let { di ->
-                RdsLabelValueRow(label = stringResource(id = R.string.rds_di_label, "")) { valueModifier ->
+                RdsLabelValueRow(
+                    label = stringResource(
+                        id = R.string.rds_di_label,
+                        ""
+                    )
+                ) { valueModifier ->
                     Text(
                         text = di,
                         modifier = valueModifier
@@ -1379,7 +1491,12 @@ private fun RdsSection(
             val afText =
                 tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
                     ?: stringResource(id = R.string.none)
-            RdsLabelValueRow(label = stringResource(id = R.string.rds_af_label, "")) { valueModifier ->
+            RdsLabelValueRow(
+                label = stringResource(
+                    id = R.string.rds_af_label,
+                    ""
+                )
+            ) { valueModifier ->
                 Text(
                     text = afText,
                     modifier = valueModifier
@@ -1425,7 +1542,8 @@ private fun AnnotatedErrorText(
     maxLines: Int = Int.MAX_VALUE,
     softWrap: Boolean = true,
     overflow: TextOverflow = TextOverflow.Clip,
-    style: TextStyle = LocalTextStyle.current
+    style: TextStyle = LocalTextStyle.current,
+    modifier: Modifier = Modifier
 ) {
     val sanitized = text.ifEmpty { " " }
     val annotated = buildAnnotatedString {
@@ -1441,6 +1559,7 @@ private fun AnnotatedErrorText(
         }
     }
     Text(
+        modifier = modifier,
         text = annotated,
         minLines = minLines,
         maxLines = maxLines,
@@ -1538,10 +1657,14 @@ private fun SpectrumSection(
             } else {
                 val minSpectrumFreq = spectrum.first().frequencyMHz
                 val maxSpectrumFreq = spectrum.last().frequencyMHz
-                val initialFreq = (state.tunerState?.freqMHz ?: state.pendingFrequencyMHz ?: minSpectrumFreq)
-                    .coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                val initialFreq =
+                    (state.tunerState?.freqMHz ?: state.pendingFrequencyMHz ?: minSpectrumFreq)
+                        .coerceIn(minSpectrumFreq, maxSpectrumFreq)
 
-                var sliderValue by remember(minSpectrumFreq, maxSpectrumFreq) { mutableStateOf(initialFreq) }
+                var sliderValue by remember(
+                    minSpectrumFreq,
+                    maxSpectrumFreq
+                ) { mutableDoubleStateOf(initialFreq) }
 
                 LaunchedEffect(state.tunerState?.freqMHz, minSpectrumFreq, maxSpectrumFreq) {
                     state.tunerState?.freqMHz?.let { tuned ->
@@ -1556,7 +1679,10 @@ private fun SpectrumSection(
                     RdsLabelText(text = stringResource(id = R.string.spectrum_selected_frequency_label))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = stringResource(id = R.string.spectrum_selected_frequency_value, displayFreq),
+                        text = stringResource(
+                            id = R.string.spectrum_selected_frequency_value,
+                            displayFreq
+                        ),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -1569,7 +1695,8 @@ private fun SpectrumSection(
                     onDragStateChange(sliderDragging)
                 }
 
-                val sliderSteps = ((maxSpectrumFreq - minSpectrumFreq) * 10).roundToInt().coerceAtLeast(1) - 1
+                val sliderSteps =
+                    ((maxSpectrumFreq - minSpectrumFreq) * 10).roundToInt().coerceAtLeast(1) - 1
                 Slider(
                     value = sliderValue.toFloat(),
                     onValueChange = { raw ->
@@ -1645,7 +1772,8 @@ private fun SpectrumGraph(
             }
             drawPath(path, color = secondaryColor, style = Stroke(width = strokeWidthPx))
             if (highlightFreq in minFreq..maxFreq) {
-                val highlightRatio = ((highlightFreq - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
+                val highlightRatio =
+                    ((highlightFreq - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
                 val x = highlightRatio * width
                 drawLine(
                     color = primaryColor,

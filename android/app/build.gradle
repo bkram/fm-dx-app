@@ -80,6 +80,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     implementation 'com.squareup.okhttp3:okhttp:5.1.0'
     implementation 'org.jsoup:jsoup:1.21.2'
+    implementation 'androidx.core:core-splashscreen:1.0.1'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.9.4'
 
