@@ -111,7 +111,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.doOnLayout
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.FlowPreview
@@ -133,12 +132,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
-        splashScreen.setOnExitAnimationListener { splashScreenView ->
-            // Remove the system fade-out animation so the UI appears immediately on launch.
-            splashScreenView.remove()
-        }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val snackbarHostState = remember { SnackbarHostState() }
@@ -317,6 +311,8 @@ private fun MainScreen(
         }
     }
 
+    val selectedTabIndex = clampTabIndex(pagerState.currentPage, tabs.size)
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -383,12 +379,12 @@ private fun MainScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            PrimaryScrollableTabRow(selectedTabIndex = pagerState.currentPage) {
+            PrimaryScrollableTabRow(selectedTabIndex = selectedTabIndex) {
                 tabs.forEachIndexed { index, tab ->
                     val tabTag = "main_tab_${tab.titleRes}"
                     Tab(
                         modifier = Modifier.testTag(tabTag),
-                        selected = pagerState.currentPage == index,
+                        selected = selectedTabIndex == index,
                         onClick = {
                             coroutineScope.launch {
                                 pagerState.animateScrollToPage(index)
@@ -420,7 +416,7 @@ private fun MainScreen(
                                 .verticalScroll(scrollState),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            tabs[page].content()
+                            tabs.getOrNull(page)?.content?.invoke()
                         }
                     }
                 }
@@ -594,6 +590,11 @@ private fun AboutScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+internal fun clampTabIndex(currentPage: Int, tabCount: Int): Int {
+    if (tabCount <= 0) return 0
+    return currentPage.coerceIn(0, tabCount - 1)
 }
 
 private data class SectionTab(
