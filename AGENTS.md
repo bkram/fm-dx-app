@@ -30,14 +30,14 @@ These steps assume you are in the repository root.
 
 3. **Assemble the debug APK**  
    ```bash
-   ./gradlew assembleDebug
+   ./gradlew :fm-dx-app:assembleDebug
    ```
-   The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.  
+   The APK is written to `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`.  
    Note: warnings like `Unable to strip … libandroidx.graphics.path.so` are expected.
 
 4. **(Optional) Install on a connected device or emulator**  
    ```bash
-   ./gradlew installDebug
+   ./gradlew :fm-dx-app:installDebug
    ```
    Follow with `adb shell am start -n org.fmdx.app/.MainActivity` if you want to launch it from the CLI.
 
@@ -80,7 +80,7 @@ If you need to build inside a Debian-based container, mirror `docker-build.sh`:
 5. **Build**
    ```bash
    ./gradlew --version
-   ./gradlew assembleDebug
+   ./gradlew :fm-dx-app:assembleDebug
    ```
 
 Keep the SDK path writable and persist the command-line tools in CI caches to avoid re-downloading on every build.

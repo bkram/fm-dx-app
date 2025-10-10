@@ -1,0 +1,6 @@
+<resources>
+
+    <style name="Theme.FmDxAndroid" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:statusBarColor">@color/md_theme_background</item>
+    </style>
+</resources>
