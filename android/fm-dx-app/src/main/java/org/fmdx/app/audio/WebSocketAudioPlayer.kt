@@ -19,7 +19,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
 import org.fmdx.app.data.buildWebSocketUrl
-import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
@@ -76,7 +75,7 @@ private class WebSocketStreamDataSource(
     private var bufferPosition = 0
     private var webSocket: WebSocket? = null
     private var closed = false
-    private var failure: Throwable? = null
+    private var failure: AudioStreamException? = null
     private var dataSpec: DataSpec? = null
 
     override fun open(dataSpec: DataSpec): Long {
@@ -108,7 +107,8 @@ private class WebSocketStreamDataSource(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                failure = t
+                val message = "Audio stream failure (code=${response?.code})"
+                failure = AudioStreamException(message, t)
                 while (!queue.offer(endMarker)) {
                     queue.poll()
                 }
@@ -133,7 +133,7 @@ private class WebSocketStreamDataSource(
             }
             val next = queue.poll(1, TimeUnit.SECONDS) ?: continue
             if (next === endMarker) {
-                failure?.let { throw IOException("Audio stream error", it) }
+                failure?.let { throw it }
                 return C.RESULT_END_OF_INPUT
             }
             currentBuffer = next

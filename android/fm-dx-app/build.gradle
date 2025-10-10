@@ -12,14 +12,14 @@ android {
         applicationId = 'org.fmdx.app'
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.1"
+        versionCode = 12
+        versionName = "1.1.1"
 
         vectorDrawables {
             useSupportLibrary = true
         }
 
-        def userAgent = "fm-dx-android/$versionName"
+        def userAgent = "fm-dx-app/$versionName"
         buildConfigField "String", "USER_AGENT", "\"${userAgent}\""
     }
 
@@ -67,18 +67,18 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.17.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
     implementation 'androidx.activity:activity-compose:1.11.0'
-    implementation 'androidx.compose.ui:ui:1.9.2'
-    implementation 'androidx.compose.ui:ui-graphics:1.9.2'
-    implementation 'androidx.compose.ui:ui-tooling-preview:1.9.2'
+    implementation 'androidx.compose.ui:ui:1.9.3'
+    implementation 'androidx.compose.ui:ui-graphics:1.9.3'
+    implementation 'androidx.compose.ui:ui-tooling-preview:1.9.3'
     implementation 'androidx.compose.material3:material3:1.4.0'
     implementation 'androidx.compose.material:material-icons-extended:1.7.8'
-    debugImplementation 'androidx.compose.ui:ui-tooling:1.9.2'
-    debugImplementation 'androidx.compose.ui:ui-test-manifest:1.9.2'
+    debugImplementation 'androidx.compose.ui:ui-tooling:1.9.3'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest:1.9.3'
 
-    implementation 'androidx.compose.foundation:foundation:1.9.2'
+    implementation 'androidx.compose.foundation:foundation:1.9.3'
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
-    implementation 'com.squareup.okhttp3:okhttp:5.1.0'
+    implementation 'com.squareup.okhttp3:okhttp:5.2.1'
     implementation 'org.jsoup:jsoup:1.21.2'
     implementation 'androidx.core:core-splashscreen:1.0.1'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4'

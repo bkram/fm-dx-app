@@ -4,19 +4,21 @@ import android.content.Context
 import android.os.Bundle
 import android.widget.NumberPicker
 import android.widget.TextView
-import androidx.annotation.ColorInt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.annotation.ColorInt
 import androidx.annotation.StringRes
-import androidx.annotation.VisibleForTesting
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,8 +30,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -40,8 +40,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -50,11 +50,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -65,13 +65,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
@@ -79,32 +78,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -119,7 +118,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
-import org.fmdx.app.BuildConfig
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -476,8 +474,10 @@ private fun AboutScreen(onBack: () -> Unit) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
     val githubLabel = stringResource(id = R.string.about_github_link)
     val githubUrl = stringResource(id = R.string.about_github_url)
-    val siteLabel = stringResource(id = R.string.about_site_link)
-    val siteUrl = stringResource(id = R.string.about_site_url)
+    val fmdxOrgSiteLabel = stringResource(id = R.string.about_site_link)
+    val fmdxOrgSiteUrl = stringResource(id = R.string.about_site_url)
+    val fmdxWebServerUrl = stringResource(id = R.string.about_fmdxwebserver_url)
+    val fmdxWebServerLabel = stringResource(id = R.string.about_fmdxwebserver_title)
     val versionName = BuildConfig.VERSION_NAME
     val versionCode = BuildConfig.VERSION_CODE
     val versionLabel = stringResource(id = R.string.about_version, versionName, versionCode)
@@ -505,17 +505,35 @@ private fun AboutScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(id = R.string.about_message),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = versionLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.mipmap.fmdx_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.size(96.dp)
+                    )
+                    Text(
+                        text = stringResource(id = R.string.about_message),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = versionLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -543,10 +561,9 @@ private fun AboutScreen(onBack: () -> Unit) {
                             .fillMaxWidth()
                             .clickable { uriHandler.openUri(githubUrl) }
                     )
-                    HorizontalDivider()
                     ListItem(
-                        headlineContent = { Text(text = siteLabel) },
-                        supportingContent = { Text(text = siteUrl) },
+                        headlineContent = { Text(text = fmdxWebServerLabel) },
+                        supportingContent = { Text(text = fmdxWebServerUrl) },
                         trailingContent = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.OpenInNew,
@@ -556,7 +573,22 @@ private fun AboutScreen(onBack: () -> Unit) {
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { uriHandler.openUri(siteUrl) }
+                            .clickable { uriHandler.openUri(githubUrl) }
+                    )
+                    HorizontalDivider()
+                    ListItem(
+                        headlineContent = { Text(text = fmdxOrgSiteLabel) },
+                        supportingContent = { Text(text = fmdxOrgSiteUrl) },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(fmdxOrgSiteUrl) }
                     )
                 }
             }
@@ -1049,56 +1081,6 @@ private fun NumberPicker.setTextColorCompat(@ColorInt color: Int) {
     applyColor()
     doOnLayout { applyColor() }
     post { applyColor() }
-}
-
-@Composable
-private fun StatusSection(
-    state: UiState,
-    formatSignal: (TunerState?, SignalUnit) -> String
-) {
-    val signalValue = state.tunerState?.signalDbf
-    val progress = signalValue
-        ?.coerceIn(0.0, SIGNAL_MAX_DBF)
-        ?.div(SIGNAL_MAX_DBF)
-        ?.toFloat()
-        ?: 0f
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (state.isConnecting || signalValue == null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RdsLabelText(text = stringResource(id = R.string.signal_label, ""))
-                Spacer(Modifier.width(8.dp))
-                Text(text = formatSignal(state.tunerState, state.signalUnit))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RdsLabelText(text = stringResource(id = R.string.users_label, ""))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = state.tunerState?.users?.toString()
-                        ?: stringResource(id = R.string.default_value)
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RdsLabelText(text = stringResource(id = R.string.audio_label, ""))
-                Spacer(Modifier.width(8.dp))
-                val audioStatus =
-                    if (state.audioPlaying) stringResource(id = R.string.audio_playing) else stringResource(
-                        id = R.string.audio_stopped
-                    )
-                Text(text = audioStatus)
-            }
-        }
-    }
 }
 
 @Composable

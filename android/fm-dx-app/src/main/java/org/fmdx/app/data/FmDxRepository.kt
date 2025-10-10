@@ -21,7 +21,9 @@ import org.fmdx.app.model.TunerState
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.io.EOFException
 import java.io.IOException
+import java.net.SocketException
 
 class FmDxRepository(
     val client: OkHttpClient,
@@ -70,8 +72,7 @@ class FmDxRepository(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                logDebug("control socket: failure code=${response?.code}", t)
-                onError(t)
+                handleWebSocketFailure("control", t, response, onError)
                 onClosed()
             }
         })
@@ -106,8 +107,7 @@ class FmDxRepository(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                logDebug("plugin socket: failure code=${response?.code}", t)
-                onError(t)
+                handleWebSocketFailure("plugin", t, response, onError)
             }
         })
         return PluginConnection(webSocket)
@@ -242,6 +242,21 @@ class FmDxRepository(
             }
         }
 
+    private fun handleWebSocketFailure(
+        socketName: String,
+        t: Throwable,
+        response: Response?,
+        onError: (Throwable) -> Unit
+    ) {
+        logDebug("$socketName socket: failure code=${response?.code}", t)
+        val message = when (t) {
+            is SocketException -> "Connection to server lost"
+            is EOFException -> "Connection closed by server"
+            else -> t.message ?: "Unknown connection error"
+        }
+        onError(IOException(message, t))
+    }
+
     companion object {
         private const val COMMAND_THROTTLE_MS = 125L
         private const val TIMEOUT_MS = 10000L
@@ -304,4 +319,3 @@ fun buildWebSocketUrl(url: String, vararg pathSegments: String): String {
     val wsScheme = if (httpScheme.equals("https", ignoreCase = true)) "wss" else "ws"
     return normalized.replaceFirst("$httpScheme://", "$wsScheme://")
 }
-
