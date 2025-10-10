@@ -21,12 +21,12 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+        run: ./gradlew :fm-dx-app:assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk
           retention-days: 30
 
   build_release:
@@ -43,10 +43,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :fm-dx-app:assembleRelease
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: android-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/fm-dx-app/build/outputs/apk/release/fm-dx-app-release.apk
           retention-days: 30

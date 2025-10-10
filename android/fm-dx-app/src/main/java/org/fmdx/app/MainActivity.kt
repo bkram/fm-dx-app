@@ -59,6 +59,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -93,9 +94,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -619,6 +620,12 @@ private fun ServerSection(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
+    val connectAndDismissKeyboard = {
+        focusManager.clearFocus(force = true)
+        onConnect()
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -635,7 +642,7 @@ private fun ServerSection(
                         imeAction = ImeAction.Done,
                         keyboardType = KeyboardType.Uri
                     ),
-                    keyboardActions = KeyboardActions(onDone = { onConnect() })
+                    keyboardActions = KeyboardActions(onDone = { connectAndDismissKeyboard() })
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.isConnected) {
@@ -646,7 +653,7 @@ private fun ServerSection(
                             Text(text = stringResource(id = R.string.disconnect))
                         }
                     } else {
-                        Button(onClick = onConnect, enabled = !state.isConnecting) {
+                        Button(onClick = { connectAndDismissKeyboard() }, enabled = !state.isConnecting) {
                             Text(text = stringResource(id = R.string.connect))
                         }
                         OutlinedButton(onClick = onDisconnect, enabled = false) {

@@ -1,3 +1,5 @@
+import org.gradle.api.initialization.resolve.RepositoriesMode
+
 pluginManagement {
     repositories {
         google()
@@ -7,13 +9,13 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(org.gradle.api.initialization.resolve.RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
     }
 }
 
-rootProject.name = "FmDxAndroid"
-include(":app")
-project(':app').projectDir = new File('android/app')
+rootProject.name = "fm-dx-app"
+include(':fm-dx-app')
+project(':fm-dx-app').projectDir = new File('android/fm-dx-app')
