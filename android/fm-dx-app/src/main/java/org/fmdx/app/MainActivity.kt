@@ -99,6 +99,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -602,6 +604,12 @@ internal fun clampTabIndex(currentPage: Int, tabCount: Int): Int {
 private data class SectionTab(
     @param:StringRes val titleRes: Int,
     val content: @Composable () -> Unit
+)
+
+private data class RdsFlagUi(
+    @param:StringRes val shortLabelRes: Int,
+    @param:StringRes val fullLabelRes: Int,
+    val enabled: Boolean
 )
 
 @Composable
@@ -1514,6 +1522,7 @@ private fun InformationSection(
         ) {
             RdsPsPiContent(tuner)
             RdsPtyEccContent(tuner, currentPty)
+            RdsFlagsRow(tuner)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
                 RdsLabelValueRow(
@@ -1524,20 +1533,6 @@ private fun InformationSection(
                 ) { valueModifier ->
                     Text(
                         text = country,
-                        modifier = valueModifier
-                    )
-                }
-            }
-            val flags = tuner?.flags()
-            if (!flags.isNullOrBlank()) {
-                RdsLabelValueRow(
-                    label = stringResource(
-                        id = R.string.flags_label,
-                        ""
-                    )
-                ) { valueModifier ->
-                    Text(
-                        text = flags,
                         modifier = valueModifier
                     )
                 }
@@ -1600,6 +1595,74 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
             text = ecc,
             textAlign = TextAlign.End
         )
+    }
+}
+
+@Composable
+private fun RdsFlagsRow(tuner: TunerState?) {
+    if (tuner == null) return
+    val flags = buildList {
+        add(
+            RdsFlagUi(
+                shortLabelRes = R.string.rds_flag_tp_short,
+                fullLabelRes = R.string.rds_flag_tp_full,
+                enabled = tuner.tp
+            )
+        )
+        add(
+            RdsFlagUi(
+                shortLabelRes = R.string.rds_flag_ta_short,
+                fullLabelRes = R.string.rds_flag_ta_full,
+                enabled = tuner.ta
+            )
+        )
+        add(
+            RdsFlagUi(
+                shortLabelRes = R.string.rds_flag_ms_music,
+                fullLabelRes = R.string.rds_flag_ms_music_full,
+                enabled = tuner.ms
+            )
+        )
+        add(
+            RdsFlagUi(
+                shortLabelRes = R.string.rds_flag_ms_speech,
+                fullLabelRes = R.string.rds_flag_ms_speech_full,
+                enabled = !tuner.ms
+            )
+        )
+    }
+    RdsLabelText(text = stringResource(id = R.string.rds_flags_heading))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        flags.forEach { flag ->
+            val (containerColor, contentColor) = if (flag.enabled) {
+                MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            val statusText = stringResource(
+                id = if (flag.enabled) R.string.state_on else R.string.state_off
+            )
+            val description = stringResource(id = flag.fullLabelRes)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = containerColor,
+                contentColor = contentColor,
+                tonalElevation = if (flag.enabled) 2.dp else 0.dp,
+                modifier = Modifier.semantics {
+                    contentDescription = "$description: $statusText"
+                }
+            ) {
+                Text(
+                    text = stringResource(id = flag.shortLabelRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
     }
 }
 

@@ -43,7 +43,17 @@
     <string name="rds_pi_label" translatable="false">PI: %1$s</string>
     <string name="rds_ecc_label" translatable="false">ECC: %1$s</string>
     <string name="country_label">Country: %1$s</string>
-    <string name="flags_label" translatable="false">Flags: %1$s</string>
+    <string name="rds_flags_heading">RDS flags</string>
+    <string name="rds_flag_tp_short" translatable="false">TP</string>
+    <string name="rds_flag_tp_full">Traffic programme (TP)</string>
+    <string name="rds_flag_ta_short" translatable="false">TA</string>
+    <string name="rds_flag_ta_full">Traffic announcement (TA)</string>
+    <string name="rds_flag_ms_music" translatable="false">Music</string>
+    <string name="rds_flag_ms_music_full">Music programme</string>
+    <string name="rds_flag_ms_speech" translatable="false">Speech</string>
+    <string name="rds_flag_ms_speech_full">Speech programme</string>
+    <string name="state_on">On</string>
+    <string name="state_off">Off</string>
     <string name="rds_pty_label" translatable="false">PTY: %1$s</string>
     <string name="rds_di_label" translatable="false">DI: %1$s</string>
     <string name="af_frequencies">%1$d frequencies</string>

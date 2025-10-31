@@ -59,6 +59,17 @@
     <string name="about_site_link">Bezoek fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
+    <string name="rds_flags_heading">RDS-vlaggen</string>
+    <string name="rds_flag_tp_short" translatable="false">TP</string>
+    <string name="rds_flag_tp_full">Verkeersprogramma (TP)</string>
+    <string name="rds_flag_ta_short" translatable="false">TA</string>
+    <string name="rds_flag_ta_full">Verkeersbericht (TA)</string>
+    <string name="rds_flag_ms_music" translatable="false">Muziek</string>
+    <string name="rds_flag_ms_music_full">Muziekprogramma</string>
+    <string name="rds_flag_ms_speech" translatable="false">Spraak</string>
+    <string name="rds_flag_ms_speech_full">Spraakprogramma</string>
+    <string name="state_on">Aan</string>
+    <string name="state_off">Uit</string>
     <string name="about_version">Versie %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">GitHub: fm-dx-webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
