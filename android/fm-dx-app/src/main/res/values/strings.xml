@@ -70,13 +70,13 @@
     <string name="server_info_title">Server Information</string>
     <string name="server_info_tuner_name">%1$s</string>
     <string name="server_info_unavailable">No server details available.</string>
-    <string name="about_message">FM-DX App is an open-source Android client for FM-DX Webservers.</string>
-    <string name="about_github_link">GitHub: FM-DX App</string>
+    <string name="about_message">FM-DX App is an open-source Android client for M-DX Webservers.</string>
+    <string name="about_github_link">Github: FM-DX App</string>
     <string name="about_github_url">https://github.com/bkram/fm-dx-app</string>
     <string name="about_site_link">Visit fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
-    <string name="about_links_github">GitHub</string>
+    <string name="about_links_github">Github</string>
     <string name="about_version">Version %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">Github: FM-DX Webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
