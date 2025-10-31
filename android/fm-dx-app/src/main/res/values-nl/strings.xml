@@ -65,8 +65,7 @@
     <string name="about_github_url">https://github.com/bkram/fm-dx-app</string>
     <string name="about_site_link">Bezoek fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
-    <string name="about_links_title">Projectlinks</string>
-    <string name="about_links_github">Github</string>
+    <string name="about_links_title">Project links</string>
     <string name="about_version">Versie %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">Github: fm-dx-webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>

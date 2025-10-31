@@ -76,7 +76,7 @@
     <string name="about_site_link">Visit fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
-    <string name="about_links_github">Github</string>
+    <string name="about_links_github" translatable="false">Github</string>
     <string name="about_version">Version %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">Github: FM-DX Webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
