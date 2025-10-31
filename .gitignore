@@ -34,3 +34,4 @@ Thumbs.db
 /.cxx/
 /android/**/.cxx/
 /android/**/.externalNativeBuild/
+/.vscode/settings.json
