@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -90,7 +92,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -112,9 +113,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chargemap.compose.numberpicker.NumberPicker
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
@@ -276,7 +277,7 @@ private fun MainScreen(
                     antennaLabel = antennaLabel
                 )
             })
-            add(SectionTab(R.string.rds) { RdsSection(state, currentPty) })
+            add(SectionTab(R.string.rds) { InformationSection(state, currentPty) })
             add(
                 SectionTab(R.string.spectrum) {
                     SpectrumSection(
@@ -298,8 +299,17 @@ private fun MainScreen(
     LaunchedEffect(state.isConnected, tabs.size) {
         if (!state.isConnected) {
             pagerState.scrollToPage(0)
-        } else if (pagerState.currentPage >= tabs.size) {
-            pagerState.scrollToPage(tabs.lastIndex)
+        } else {
+            if (pagerState.currentPage >= tabs.size) {
+                pagerState.scrollToPage(tabs.lastIndex)
+                return@LaunchedEffect
+            }
+            if (pagerState.currentPage == 0) {
+                val tunerPageIndex = tabs.indexOfFirst { it.titleRes == R.string.tuner }
+                if (tunerPageIndex != -1) {
+                    pagerState.animateScrollToPage(tunerPageIndex)
+                }
+            }
         }
     }
 
@@ -657,18 +667,59 @@ private fun ServerSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
-                    value = state.serverUrl,
-                    onValueChange = onUpdateUrl,
-                    label = { Text(stringResource(id = R.string.server_url)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done,
-                        keyboardType = KeyboardType.Uri
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { connectAndDismissKeyboard() })
-                )
+                val recentServers = state.recentServerUrls
+                var recentExpanded by rememberSaveable { mutableStateOf(false) }
+                val hasRecent = recentServers.isNotEmpty()
+
+                LaunchedEffect(hasRecent) {
+                    if (!hasRecent) {
+                        recentExpanded = false
+                    }
+                }
+
+                Box {
+                    OutlinedTextField(
+                        value = state.serverUrl,
+                        onValueChange = {
+                            recentExpanded = false
+                            onUpdateUrl(it)
+                        },
+                        label = { Text(stringResource(id = R.string.server_url)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            if (hasRecent) {
+                                IconButton(onClick = { recentExpanded = !recentExpanded }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ArrowDropDown,
+                                        contentDescription = stringResource(id = R.string.recent_servers)
+                                    )
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Done,
+                            keyboardType = KeyboardType.Uri
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { connectAndDismissKeyboard() })
+                    )
+
+                    DropdownMenu(
+                        expanded = recentExpanded && hasRecent,
+                        onDismissRequest = { recentExpanded = false }
+                    ) {
+                        recentServers.forEach { server ->
+                            DropdownMenuItem(
+                                text = { Text(server) },
+                                onClick = {
+                                    recentExpanded = false
+                                    onUpdateUrl(server)
+                                    focusManager.clearFocus(force = true)
+                                }
+                            )
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.isConnected) {
                         OutlinedButton(onClick = onConnect, enabled = false) {
@@ -757,7 +808,6 @@ private fun FrequencyControlsCard(
 
     val minMhz = minKHz / 1000
     val maxMhz = maxKHz / 1000
-    val mhzSteps = maxMhz - minMhz + 1
     val decimalSteps = max(1, 1000 / stepKHz)
     val decimalLoopCount = if (decimalSteps > 1) 30 else 1
     val decimalRangeSize = decimalSteps * decimalLoopCount
@@ -871,141 +921,144 @@ private fun FrequencyControlsCard(
         }
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val pickerWidth = 96.dp
+        val pickerHeight = 196.dp
+        val pickerTextStyle = MaterialTheme.typography.headlineMedium.copy(
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            val pickerWidth = 96.dp
-            val pickerHeight = 196.dp
-            val pickerTextStyle = MaterialTheme.typography.headlineMedium.copy(
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically
+            val mhzDefault = selectedMHz.coerceIn(minMhz, maxMhz)
+            Box(
+                modifier = Modifier
+                    .width(pickerWidth)
+                    .height(pickerHeight)
+                    .alpha(if (isControlReady) 1f else 0.4f)
             ) {
-                val mhzDefault = selectedMHz.coerceIn(minMhz, maxMhz)
-                Box(
-                    modifier = Modifier
-                        .width(pickerWidth)
-                        .height(pickerHeight)
-                        .alpha(if (isControlReady) 1f else 0.4f)
-                ) {
-                    key(minMhz, maxMhz, mhzDefault) {
-                        NumberPicker(
-                            modifier = Modifier.fillMaxSize(),
-                            label = { value -> value.toString() },
-                            value = mhzDefault,
-                            onValueChange = { value ->
-                                if (!isControlReady) return@NumberPicker
-                                selectedMHz = value.coerceIn(minMhz, maxMhz)
-                                isUserInteracting = true
-                                userInteractionTick++
-                            },
-                            dividersColor = Color.Transparent,
-                            range = minMhz..maxMhz,
-                            textStyle = pickerTextStyle
-                        )
-                    }
-                    if (!isControlReady) {
-                        DisabledOverlay()
-                    }
+                key(minMhz, maxMhz, mhzDefault) {
+                    NumberPicker(
+                        modifier = Modifier.fillMaxSize(),
+                        label = { value -> value.toString() },
+                        value = mhzDefault,
+                        onValueChange = { value ->
+                            if (!isControlReady) return@NumberPicker
+                            selectedMHz = value.coerceIn(minMhz, maxMhz)
+                            isUserInteracting = true
+                            userInteractionTick++
+                        },
+                        dividersColor = Color.Transparent,
+                        range = minMhz..maxMhz,
+                        textStyle = pickerTextStyle
+                    )
                 }
-                Text(
-                    text = ".",
-                    style = pickerTextStyle,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-                Box(
-                    modifier = Modifier
-                        .width(pickerWidth)
-                        .height(pickerHeight)
-                        .alpha(if (isControlReady) 1f else 0.4f),
-                    contentAlignment = Center
-                ) {
-                    key(selectedMHz, decimalRange.first, decimalRange.last) {
-                        NumberPicker(
-                            modifier = Modifier.fillMaxSize(),
-                            label = { raw ->
-                                val wrapped = wrappedDecimalIndex(raw)
-                                decimalDisplayValues.getOrElse(wrapped) { "" }
-                            },
-                            value = decimalPickerPosition,
-                            onValueChange = { value ->
-                                if (!isControlReady) return@NumberPicker
-                                val previousPosition = decimalPickerPosition
-                                val previousDecimal = wrappedDecimalIndex(previousPosition)
-                                var nextPickerPosition = value
-                                var nextMHz = selectedMHz
-                                var nextDecimal = wrappedDecimalIndex(value)
+                if (!isControlReady) {
+                    DisabledOverlay()
+                }
+            }
+            Text(
+                text = ".",
+                style = pickerTextStyle,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .width(pickerWidth)
+                    .height(pickerHeight)
+                    .alpha(if (isControlReady) 1f else 0.4f),
+                contentAlignment = Center
+            ) {
+                key(selectedMHz, decimalRange.first, decimalRange.last) {
+                    NumberPicker(
+                        modifier = Modifier.fillMaxSize(),
+                        label = { raw ->
+                            val wrapped = wrappedDecimalIndex(raw)
+                            decimalDisplayValues.getOrElse(wrapped) { "" }
+                        },
+                        value = decimalPickerPosition,
+                        onValueChange = { value ->
+                            if (!isControlReady) return@NumberPicker
+                            val previousPosition = decimalPickerPosition
+                            val previousDecimal = wrappedDecimalIndex(previousPosition)
+                            var nextPickerPosition = value
+                            var nextMHz = selectedMHz
+                            var nextDecimal = wrappedDecimalIndex(value)
 
-                                if (decimalSteps > 1) {
-                                    val minForCurrent = minDecimalIndexFor(nextMHz)
-                                    val maxForCurrent = maxDecimalIndexFor(nextMHz)
-                                    val direction = value - previousPosition
-                                    val wrapsForward =
-                                        direction > 0 &&
-                                                previousDecimal == maxForCurrent &&
-                                                nextMHz < maxMhz
-                                    val wrapsBackward =
-                                        direction < 0 &&
-                                                previousDecimal == minForCurrent &&
-                                                nextMHz > minMhz
+                            if (decimalSteps > 1) {
+                                val minForCurrent = minDecimalIndexFor(nextMHz)
+                                val maxForCurrent = maxDecimalIndexFor(nextMHz)
+                                val direction = value - previousPosition
+                                val wrapsForward =
+                                    direction > 0 &&
+                                            previousDecimal == maxForCurrent &&
+                                            nextMHz < maxMhz
+                                val wrapsBackward =
+                                    direction < 0 &&
+                                            previousDecimal == minForCurrent &&
+                                            nextMHz > minMhz
 
-                                    when {
-                                        wrapsForward -> {
-                                            val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
-                                            nextMHz = candidateMHz
-                                            val candidateMin = minDecimalIndexFor(candidateMHz)
-                                            nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
-                                            nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
-                                        }
+                                when {
+                                    wrapsForward -> {
+                                        val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
+                                        nextMHz = candidateMHz
+                                        val candidateMin = minDecimalIndexFor(candidateMHz)
+                                        nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
+                                        nextPickerPosition =
+                                            alignPickerPositionToIndex(value, nextDecimal)
+                                    }
 
-                                        wrapsBackward -> {
-                                            val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
-                                            nextMHz = candidateMHz
-                                            val candidateMax = maxDecimalIndexFor(candidateMHz)
-                                            nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
-                                            nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
-                                        }
+                                    wrapsBackward -> {
+                                        val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
+                                        nextMHz = candidateMHz
+                                        val candidateMax = maxDecimalIndexFor(candidateMHz)
+                                        nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
+                                        nextPickerPosition =
+                                            alignPickerPositionToIndex(value, nextDecimal)
+                                    }
 
-                                        else -> {
-                                            val clampedDecimal = nextDecimal.coerceIn(minForCurrent, maxForCurrent)
-                                            if (clampedDecimal != nextDecimal) {
-                                                nextDecimal = clampedDecimal
-                                                nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
-                                            }
+                                    else -> {
+                                        val clampedDecimal =
+                                            nextDecimal.coerceIn(minForCurrent, maxForCurrent)
+                                        if (clampedDecimal != nextDecimal) {
+                                            nextDecimal = clampedDecimal
+                                            nextPickerPosition =
+                                                alignPickerPositionToIndex(value, nextDecimal)
                                         }
                                     }
-                                } else {
-                                    nextDecimal = 0
-                                    nextPickerPosition = decimalRange.first
                                 }
+                            } else {
+                                nextDecimal = 0
+                                nextPickerPosition = decimalRange.first
+                            }
 
-                                val coercedPicker = nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
-                                if (coercedPicker != decimalPickerPosition) {
-                                    decimalPickerPosition = coercedPicker
-                                }
-                                if (nextMHz != selectedMHz) {
-                                    selectedMHz = nextMHz
-                                }
-                                if (nextDecimal != selectedDecimalIndex) {
-                                    selectedDecimalIndex = nextDecimal
-                                }
-                                isUserInteracting = true
-                                userInteractionTick++
-                            },
-                            dividersColor = Color.Transparent,
-                            range = decimalRange,
-                            textStyle = pickerTextStyle
-                        )
-                    }
-                    if (!isControlReady) {
-                        DisabledOverlay()
-                    }
+                            val coercedPicker =
+                                nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
+                            if (coercedPicker != decimalPickerPosition) {
+                                decimalPickerPosition = coercedPicker
+                            }
+                            if (nextMHz != selectedMHz) {
+                                selectedMHz = nextMHz
+                            }
+                            if (nextDecimal != selectedDecimalIndex) {
+                                selectedDecimalIndex = nextDecimal
+                            }
+                            isUserInteracting = true
+                            userInteractionTick++
+                        },
+                        dividersColor = Color.Transparent,
+                        range = decimalRange,
+                        textStyle = pickerTextStyle
+                    )
+                }
+                if (!isControlReady) {
+                    DisabledOverlay()
                 }
             }
         }
@@ -1050,31 +1103,50 @@ private fun TunerSection(
                     RdsRadiotextContent(tunerState)
                     HorizontalDivider()
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RdsLabelText(text = stringResource(id = R.string.antenna_current, ""))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = antennaLabel(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    SignalStrengthInfo(
+                        tunerState = tunerState,
+                        signalUnit = state.signalUnit,
+                        formatSignal = formatSignal,
+                        modifier = Modifier
+                            .weight(1f)
                     )
+                    val antennaPrefix = stringResource(id = R.string.antenna_current, "").trim()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.wrapContentWidth(Alignment.End)
+                    ) {
+                        Text(
+                            text = antennaPrefix,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = antennaLabel(),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
-                SignalStrengthInfo(
-                    tunerState = tunerState,
-                    signalUnit = state.signalUnit,
-                    isConnecting = state.isConnecting,
-                    formatSignal = formatSignal
+                HorizontalDivider()
+                FrequencyControlsCard(
+                    state = state,
+                    onTuneDirect = onTuneDirect
+                )
+                HorizontalDivider()
+                ControlButtons(
+                    state = state,
+                    onToggleEq = onToggleEq,
+                    onToggleIms = onToggleIms,
+                    onCycleAntenna = onCycleAntenna
                 )
             }
         }
-        FrequencyControlsCard(state, onTuneDirect)
-        ControlButtons(
-            state = state,
-            onToggleEq = onToggleEq,
-            onToggleIms = onToggleIms,
-            onCycleAntenna = onCycleAntenna,
-            antennaLabel = antennaLabel
-        )
     }
 }
 
@@ -1082,37 +1154,21 @@ private fun TunerSection(
 private fun SignalStrengthInfo(
     tunerState: TunerState?,
     signalUnit: SignalUnit,
-    isConnecting: Boolean,
-    formatSignal: (TunerState?, SignalUnit) -> String
+    formatSignal: (TunerState?, SignalUnit) -> String,
+    modifier: Modifier = Modifier
 ) {
-    val signalValue = tunerState?.signalDbf
-    val progress = signalValue
-        ?.coerceIn(0.0, SIGNAL_MAX_DBF)
-        ?.div(SIGNAL_MAX_DBF)
-        ?.toFloat()
-        ?: 0f
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = buildAnnotatedString {
-                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
-                    append(stringResource(id = R.string.signal_label_prefix))
-                }
-                append(formatSignal(tunerState, signalUnit))
-            },
-            style = MaterialTheme.typography.titleMedium
-        )
-        if (isConnecting || signalValue == null) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        } else {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
+    Text(
+        text = buildAnnotatedString {
+            withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                append(stringResource(id = R.string.signal_label_prefix))
+            }
+            append(formatSignal(tunerState, signalUnit))
+        },
+        style = MaterialTheme.typography.titleMedium,
+        modifier = modifier
+    )
 }
 
-private const val SIGNAL_MAX_DBF = 130.0
 private const val DEFAULT_MIN_FREQUENCY_KHZ = 65000
 private const val DEFAULT_MAX_FREQUENCY_KHZ = 108_000
 private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
@@ -1242,43 +1298,40 @@ private fun ControlButtons(
     state: UiState,
     onToggleEq: () -> Unit,
     onToggleIms: () -> Unit,
-    onCycleAntenna: () -> Unit,
-    antennaLabel: () -> String
+    onCycleAntenna: () -> Unit
 ) {
     val canSwitchAntenna = state.tunerInfo?.canSwitchAntenna() == true
     val imsActive = state.tunerState?.ims == true
     val eqActive = state.tunerState?.eq == true
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ControlToggleButton(
-                    text = stringResource(id = if (imsActive) R.string.ims_on else R.string.ims_off),
-                    pressed = imsActive,
-                    onClick = onToggleIms,
-                    enabled = state.isConnected,
-                    modifier = Modifier.weight(1f)
-                )
-                ControlToggleButton(
-                    text = stringResource(id = if (eqActive) R.string.eq_on else R.string.eq_off),
-                    pressed = eqActive,
-                    onClick = onToggleEq,
-                    enabled = state.isConnected,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Button(
-                onClick = onCycleAntenna,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = state.isConnected && canSwitchAntenna
-            ) {
-                Text(text = stringResource(id = R.string.antenna_switch))
-            }
+            ControlToggleButton(
+                text = stringResource(id = if (imsActive) R.string.ims_on else R.string.ims_off),
+                pressed = imsActive,
+                onClick = onToggleIms,
+                enabled = state.isConnected,
+                modifier = Modifier.weight(1f)
+            )
+            ControlToggleButton(
+                text = stringResource(id = if (eqActive) R.string.eq_on else R.string.eq_off),
+                pressed = eqActive,
+                onClick = onToggleEq,
+                enabled = state.isConnected,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Button(
+            onClick = onCycleAntenna,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.isConnected && canSwitchAntenna
+        ) {
+            Text(text = stringResource(id = R.string.antenna_switch))
         }
     }
 }
@@ -1449,78 +1502,77 @@ private fun RdsRadiotextContent(tuner: TunerState?) {
 }
 
 @Composable
-private fun RdsSection(
+private fun InformationSection(
     state: UiState,
     currentPty: (TunerState?) -> String
 ) {
     val tuner = state.tunerState
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                RdsPsPiContent(tuner)
-                RdsPtyEccContent(tuner, currentPty)
-                val country = tuner?.countryName ?: tuner?.countryIso
-                if (!country.isNullOrBlank()) {
-                    RdsLabelValueRow(
-                        label = stringResource(
-                            id = R.string.country_label,
-                            ""
-                        )
-                    ) { valueModifier ->
-                        Text(
-                            text = country,
-                            modifier = valueModifier
-                        )
-                    }
-                }
-                val flags = tuner?.flags()
-                if (!flags.isNullOrBlank()) {
-                    RdsLabelValueRow(
-                        label = stringResource(
-                            id = R.string.flags_label,
-                            ""
-                        )
-                    ) { valueModifier ->
-                        Text(
-                            text = flags,
-                            modifier = valueModifier
-                        )
-                    }
-                }
-                tuner?.diDisplay()?.let { di ->
-                    RdsLabelValueRow(
-                        label = stringResource(
-                            id = R.string.rds_di_label,
-                            ""
-                        )
-                    ) { valueModifier ->
-                        Text(
-                            text = di,
-                            modifier = valueModifier
-                        )
-                    }
-                }
-                val afText =
-                    tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
-                        ?: stringResource(id = R.string.none)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            RdsPsPiContent(tuner)
+            RdsPtyEccContent(tuner, currentPty)
+            val country = tuner?.countryName ?: tuner?.countryIso
+            if (!country.isNullOrBlank()) {
                 RdsLabelValueRow(
                     label = stringResource(
-                        id = R.string.rds_af_label,
+                        id = R.string.country_label,
                         ""
                     )
                 ) { valueModifier ->
                     Text(
-                        text = afText,
+                        text = country,
                         modifier = valueModifier
                     )
                 }
-                RdsRadiotextContent(tuner)
             }
+            val flags = tuner?.flags()
+            if (!flags.isNullOrBlank()) {
+                RdsLabelValueRow(
+                    label = stringResource(
+                        id = R.string.flags_label,
+                        ""
+                    )
+                ) { valueModifier ->
+                    Text(
+                        text = flags,
+                        modifier = valueModifier
+                    )
+                }
+            }
+            tuner?.diDisplay()?.let { di ->
+                RdsLabelValueRow(
+                    label = stringResource(
+                        id = R.string.rds_di_label,
+                        ""
+                    )
+                ) { valueModifier ->
+                    Text(
+                        text = di,
+                        modifier = valueModifier
+                    )
+                }
+            }
+            val afText =
+                tuner?.afList?.size?.let { stringResource(id = R.string.af_frequencies, it) }
+                    ?: stringResource(id = R.string.none)
+            RdsLabelValueRow(
+                label = stringResource(
+                    id = R.string.rds_af_label,
+                    ""
+                )
+            ) { valueModifier ->
+                Text(
+                    text = afText,
+                    modifier = valueModifier
+                )
+            }
+            RdsRadiotextContent(tuner)
+            HorizontalDivider()
+            StationDetailsContent(state)
         }
-        StationSection(state)
     }
 }
 
@@ -1587,52 +1639,53 @@ private fun AnnotatedErrorText(
 }
 
 @Composable
-private fun StationSection(state: UiState) {
+private fun StationDetailsContent(state: UiState) {
     val tx = state.tunerState?.txInfo
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            StationDetailRow(
-                labelRes = R.string.station_name_label,
-                value = tx?.name ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_location_label,
-                value = tx?.city ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_country_label,
-                value = tx?.countryCode ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_distance_label,
-                value = tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
-                    ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_power_label,
-                value = tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) }
-                    ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_polarization_label,
-                value = tx?.polarization ?: stringResource(id = R.string.default_value)
-            )
-            StationDetailRow(
-                labelRes = R.string.station_azimuth_label,
-                value = tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
-                    ?: stringResource(id = R.string.default_value)
-            )
-        }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        StationDetailRow(
+            labelRes = R.string.station_name_label,
+            value = tx?.name ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_location_label,
+            value = tx?.city ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_country_label,
+            value = tx?.countryCode ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_distance_label,
+            value = tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
+                ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_power_label,
+            value = tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) }
+                ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_polarization_label,
+            value = tx?.polarization ?: stringResource(id = R.string.default_value)
+        )
+        StationDetailRow(
+            labelRes = R.string.station_azimuth_label,
+            value = tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
+                ?: stringResource(id = R.string.default_value)
+        )
     }
 }
 
 @Composable
-private fun StationDetailRow(@StringRes labelRes: Int, value: String) {
+private fun StationDetailRow(
+    modifier: Modifier = Modifier,
+    @StringRes labelRes: Int,
+    value: String
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RdsLabelText(

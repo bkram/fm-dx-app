@@ -11,6 +11,8 @@
   tests, or lint rules). Mirror existing test patterns in the module.
 - Prefer Compose Material 3 components already in use, match the project theme, and avoid bringing
   in new UI toolkits without approval.
+- Honor the existing style guide: reuse established typography, colors, spacing, and component
+  patterns unless product explicitly requests a deviation.
 - Keep the UI modern and Compose-first: add or update composables with previews where practical so
   layouts stay testable, and avoid touching the audio playback stack unless a task explicitly calls
   for it.

@@ -25,9 +25,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.fmdx.app.audio.PlaybackService
 import org.fmdx.app.audio.MAX_NETWORK_BUFFER_CHUNKS
 import org.fmdx.app.audio.MIN_PLAYER_BUFFER_MS
+import org.fmdx.app.audio.PlaybackService
 import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
@@ -80,7 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
-        restorePersistedServerUrl()
+        restorePersistedServerState()
         restorePersistedSettings()
         refreshBufferSettings()
         initializeMediaController()
@@ -483,6 +483,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_NETWORK_BUFFER = "network_buffer"
         private const val KEY_PLAYER_BUFFER = "player_buffer"
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
+        private const val KEY_RECENT_SERVER_URLS = "recent_server_urls"
         private const val TAG = "MainViewModel"
 
         fun baselineSpectrum(): List<SpectrumPoint> {
@@ -497,15 +498,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun persistServerUrl(url: String) {
+        val updatedHistory = buildRecentServerHistory(url)
         preferences.edit {
             putString(KEY_LAST_SERVER_URL, url)
+            putString(KEY_RECENT_SERVER_URLS, updatedHistory.joinToString(separator = "\n"))
+        }
+        _uiState.update { it.copy(recentServerUrls = updatedHistory) }
+    }
+
+    private fun restorePersistedServerState() {
+        val recent = loadRecentServerUrls()
+        val persisted = preferences.getString(KEY_LAST_SERVER_URL, null)
+        val sanitized = persisted?.let { runCatching { sanitizeUrl(it) }.getOrNull() } ?: persisted
+        _uiState.update {
+            it.copy(
+                serverUrl = sanitized ?: it.serverUrl,
+                recentServerUrls = recent
+            )
         }
     }
 
-    private fun restorePersistedServerUrl() {
-        val persisted = preferences.getString(KEY_LAST_SERVER_URL, null) ?: return
-        val sanitized = runCatching { sanitizeUrl(persisted) }.getOrNull() ?: persisted
-        _uiState.update { it.copy(serverUrl = sanitized) }
+    private fun loadRecentServerUrls(): List<String> {
+        val raw = preferences.getString(KEY_RECENT_SERVER_URLS, null) ?: return emptyList()
+        return raw
+            .lineSequence()
+            .map(String::trim)
+            .filter { it.isNotEmpty() }
+            .map { entry -> runCatching { sanitizeUrl(entry) }.getOrElse { entry } }
+            .distinct()
+            .take(10)
+            .toList()
+    }
+
+    private fun buildRecentServerHistory(newUrl: String): List<String> {
+        val existing = loadRecentServerUrls()
+        val result = buildList {
+            add(newUrl)
+            existing.forEach { if (!it.equals(newUrl, ignoreCase = true)) add(it) }
+        }
+        return result.take(10)
     }
 
     private fun persistSettings(
@@ -527,7 +558,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val signalUnit =
             SignalUnit.entries.firstOrNull { it.name == signalUnitName } ?: SignalUnit.DBF
         val persistedNetworkBuffer = preferences.getInt(KEY_NETWORK_BUFFER, 8)
-        val persistedPlayerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 1500)
+        val persistedPlayerBuffer = preferences.getInt(KEY_PLAYER_BUFFER, 2000)
         val networkBuffer = persistedNetworkBuffer.coerceIn(1, MAX_NETWORK_BUFFER_CHUNKS)
         val playerBuffer = persistedPlayerBuffer.coerceAtLeast(MIN_PLAYER_BUFFER_MS)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
@@ -566,6 +597,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 data class UiState(
     val serverUrl: String = "",
+    val recentServerUrls: List<String> = emptyList(),
     val tunerInfo: TunerInfo? = null,
     val tunerState: TunerState? = null,
     val audioPlaying: Boolean = false,
@@ -577,7 +609,7 @@ data class UiState(
     val errorMessage: String? = null,
     val signalUnit: SignalUnit = SignalUnit.DBF,
     val networkBuffer: Int = 8,
-    val playerBuffer: Int = 1500,
+    val playerBuffer: Int = 2000,
     val restartAudioOnTune: Boolean = false,
     val statusMessage: String? = null,
     val pendingFrequencyMHz: Double? = null

@@ -11,7 +11,7 @@
     <string name="server">Server</string>
     <string name="tuner">Tuner</string>
     <string name="controls">Bediening</string>
-    <string name="rds">RDS</string>
+    <string name="rds">Informatie</string>
     <string name="station">Station</string>
     <string name="spectrum">Spectrum</string>
     <string name="signal_unit">Signaaleenheid</string>
@@ -33,6 +33,7 @@
     <string name="antenna_current">Antenne: %1$s</string>
     <string name="settings">Instellingen</string>
     <string name="menu">Menu</string>
+    <string name="recent_servers">Recente servers</string>
     <string name="about">Over</string>
     <string name="apply_settings">Toepassen</string>
     <string name="back">Terug</string>
@@ -67,6 +68,6 @@
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
     <string name="about_version">Versie %1$s (build %2$d)</string>
-    <string name="about_fmdxwebserver_title">Github: fm-dx-webserver</string>
+    <string name="about_fmdxwebserver_title">GitHub: fm-dx-webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
 </resources>
