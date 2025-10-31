@@ -291,6 +291,7 @@ private fun MainScreen(
         }
     }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+    val spectrumPageIndex = tabs.indexOfFirst { it.titleRes == R.string.spectrum }
     val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
@@ -388,7 +389,7 @@ private fun MainScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                userScrollEnabled = state.isConnected && !isSpectrumDragging,
+                userScrollEnabled = tabs.size > 1 && (!isSpectrumDragging || spectrumPageIndex == -1 || pagerState.currentPage != spectrumPageIndex),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -758,6 +759,11 @@ private fun FrequencyControlsCard(
     val maxMhz = maxKHz / 1000
     val mhzSteps = maxMhz - minMhz + 1
     val decimalSteps = max(1, 1000 / stepKHz)
+    val decimalLoopCount = if (decimalSteps > 1) 30 else 1
+    val decimalRangeSize = decimalSteps * decimalLoopCount
+    val decimalRange = if (decimalSteps > 1 && decimalRangeSize > 0) 0..(decimalRangeSize - 1) else 0..0
+
+    var decimalPickerPosition by rememberSaveable { mutableIntStateOf(0) }
 
     var isUserInteracting by remember { mutableStateOf(false) }
     var userInteractionTick by remember { mutableIntStateOf(0) }
@@ -766,6 +772,26 @@ private fun FrequencyControlsCard(
         if (!isUserInteracting) return@LaunchedEffect
         delay(600)
         isUserInteracting = false
+    }
+
+    fun wrappedDecimalIndex(rawPosition: Int): Int {
+        if (decimalSteps <= 1) return 0
+        val mod = rawPosition % decimalSteps
+        return if (mod < 0) mod + decimalSteps else mod
+    }
+
+    fun anchorPositionFor(decimalIndex: Int): Int {
+        if (decimalSteps <= 1) return decimalRange.first
+        val loopMid = decimalLoopCount / 2
+        val anchored = loopMid * decimalSteps + decimalIndex
+        return anchored.coerceIn(decimalRange.first, decimalRange.last)
+    }
+
+    fun alignPickerPositionToIndex(position: Int, index: Int): Int {
+        if (decimalSteps <= 1) return decimalRange.first
+        val currentWrapped = wrappedDecimalIndex(position)
+        val adjusted = position - currentWrapped + index
+        return adjusted.coerceIn(decimalRange.first, decimalRange.last)
     }
 
     fun minDecimalIndexFor(mhz: Int): Int {
@@ -801,6 +827,7 @@ private fun FrequencyControlsCard(
         val decimalIndex = ((currentFreqKHz % 1000) / stepKHz).coerceIn(minIndex, maxIndex)
         selectedMHz = mhz
         selectedDecimalIndex = decimalIndex
+        decimalPickerPosition = anchorPositionFor(decimalIndex)
     }
 
     LaunchedEffect(minKHz, maxKHz, stepKHz) {
@@ -814,7 +841,7 @@ private fun FrequencyControlsCard(
     }
 
     val decimalDisplayValues = remember(stepKHz) {
-        Array(decimalSteps) { index ->
+        Array(max(1, decimalSteps)) { index ->
             String.format(Locale.ROOT, "%02d", (index * stepKHz) / 10)
         }
     }
@@ -831,13 +858,16 @@ private fun FrequencyControlsCard(
         }
     }
 
-    LaunchedEffect(selectedMHz, minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz) {
+    LaunchedEffect(selectedMHz, minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz, isUserInteracting) {
         val clampedIndex = selectedDecimalIndex.coerceIn(
             minDecimalIndexForSelectedMhz,
             maxDecimalIndexForSelectedMhz
         )
         if (clampedIndex != selectedDecimalIndex) {
             selectedDecimalIndex = clampedIndex
+        }
+        if (!isUserInteracting) {
+            decimalPickerPosition = anchorPositionFor(clampedIndex)
         }
     }
 
@@ -889,10 +919,6 @@ private fun FrequencyControlsCard(
                     style = pickerTextStyle,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
-                val decimalDefault = selectedDecimalIndex.coerceIn(
-                    minDecimalIndexForSelectedMhz,
-                    maxDecimalIndexForSelectedMhz
-                )
                 Box(
                     modifier = Modifier
                         .width(pickerWidth)
@@ -900,19 +926,80 @@ private fun FrequencyControlsCard(
                         .alpha(if (isControlReady) 1f else 0.4f),
                     contentAlignment = Center
                 ) {
-                    key(selectedMHz, minDecimalIndexForSelectedMhz, maxDecimalIndexForSelectedMhz, decimalDefault) {
+                    key(selectedMHz, decimalRange.first, decimalRange.last) {
                         NumberPicker(
                             modifier = Modifier.fillMaxSize(),
-                            label = { index -> decimalDisplayValues.getOrNull(index) ?: "" },
-                            value = decimalDefault,
+                            label = { raw ->
+                                val wrapped = wrappedDecimalIndex(raw)
+                                decimalDisplayValues.getOrElse(wrapped) { "" }
+                            },
+                            value = decimalPickerPosition,
                             onValueChange = { value ->
                                 if (!isControlReady) return@NumberPicker
-                                selectedDecimalIndex = value
+                                val previousPosition = decimalPickerPosition
+                                val previousDecimal = wrappedDecimalIndex(previousPosition)
+                                var nextPickerPosition = value
+                                var nextMHz = selectedMHz
+                                var nextDecimal = wrappedDecimalIndex(value)
+
+                                if (decimalSteps > 1) {
+                                    val minForCurrent = minDecimalIndexFor(nextMHz)
+                                    val maxForCurrent = maxDecimalIndexFor(nextMHz)
+                                    val direction = value - previousPosition
+                                    val wrapsForward =
+                                        direction > 0 &&
+                                                previousDecimal == maxForCurrent &&
+                                                nextMHz < maxMhz
+                                    val wrapsBackward =
+                                        direction < 0 &&
+                                                previousDecimal == minForCurrent &&
+                                                nextMHz > minMhz
+
+                                    when {
+                                        wrapsForward -> {
+                                            val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
+                                            nextMHz = candidateMHz
+                                            val candidateMin = minDecimalIndexFor(candidateMHz)
+                                            nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
+                                            nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
+                                        }
+
+                                        wrapsBackward -> {
+                                            val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
+                                            nextMHz = candidateMHz
+                                            val candidateMax = maxDecimalIndexFor(candidateMHz)
+                                            nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
+                                            nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
+                                        }
+
+                                        else -> {
+                                            val clampedDecimal = nextDecimal.coerceIn(minForCurrent, maxForCurrent)
+                                            if (clampedDecimal != nextDecimal) {
+                                                nextDecimal = clampedDecimal
+                                                nextPickerPosition = alignPickerPositionToIndex(value, nextDecimal)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    nextDecimal = 0
+                                    nextPickerPosition = decimalRange.first
+                                }
+
+                                val coercedPicker = nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
+                                if (coercedPicker != decimalPickerPosition) {
+                                    decimalPickerPosition = coercedPicker
+                                }
+                                if (nextMHz != selectedMHz) {
+                                    selectedMHz = nextMHz
+                                }
+                                if (nextDecimal != selectedDecimalIndex) {
+                                    selectedDecimalIndex = nextDecimal
+                                }
                                 isUserInteracting = true
                                 userInteractionTick++
                             },
                             dividersColor = Color.Transparent,
-                            range = minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz,
+                            range = decimalRange,
                             textStyle = pickerTextStyle
                         )
                     }
