@@ -92,3 +92,12 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
 }
+
+tasks.register("printVersion") {
+    def versionName = android.defaultConfig.versionName
+    def versionCode = android.defaultConfig.versionCode
+    doLast {
+        println("VERSION_NAME=${versionName}")
+        println("VERSION_CODE=${versionCode}")
+    }
+}
