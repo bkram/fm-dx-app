@@ -24,12 +24,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.fmdx.app.audio.MAX_NETWORK_BUFFER_CHUNKS
 import org.fmdx.app.audio.MIN_PLAYER_BUFFER_MS
 import org.fmdx.app.audio.PlaybackService
 import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
+import org.fmdx.app.data.SpectrumPluginEvent
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
@@ -64,6 +66,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var controlConnection: ControlConnection? = null
     private var pluginConnection: PluginConnection? = null
     private var commandJob: Job? = null
+    private var spectrumScanFallbackJob: Job? = null
+    private var stationLogoJob: Job? = null
+    private var lastLogoKey: String? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.let { if (it.isDone) it.get() else null }
 
@@ -145,6 +150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         logDebug("connect(): sanitized server URL=$sanitized")
         persistServerUrl(sanitized)
         val connectingMessage = "Connecting to $sanitized…"
+        lastLogoKey = null
         _uiState.update {
             it.copy(
                 serverUrl = sanitized,
@@ -172,6 +178,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 startControlConnection(sanitized)
                 startPluginConnection(sanitized)
+                scheduleLogoUpdate(sanitized, _uiState.value.tunerState)
                 refreshSpectrum(sanitized)
             } catch (ex: Exception) {
                 logDebug("connect(): failed", ex)
@@ -194,6 +201,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pluginConnection = null
         commandJob?.cancel()
         commandJob = null
+        spectrumScanFallbackJob?.cancel()
+        spectrumScanFallbackJob = null
+        stationLogoJob?.cancel()
+        stationLogoJob = null
+        lastLogoKey = null
         controller?.stop()
         controller?.clearMediaItems()
         _uiState.update { currentState ->
@@ -207,7 +219,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tunerInfo = null,
                 tunerState = null,
                 antennas = emptyList(),
-                spectrum = baselineSpectrum()
+                spectrum = baselineSpectrum(),
+                stationLogoUrl = DEFAULT_LOGO_URL
             )
         }
     }
@@ -292,36 +305,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val plugin = pluginConnection ?: return
         if (url.isBlank()) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isScanning = true) }
+            _uiState.update { it.copy(isScanning = true, statusMessage = null) }
+            spectrumScanFallbackJob?.cancel()
             plugin.requestSpectrumScan()
-            val deadline = System.currentTimeMillis() + 10000
-            var fetched = false
-            while (System.currentTimeMillis() < deadline) {
-                delay(500)
-                val points = try {
-                    repository.fetchSpectrumData(url, BuildConfig.USER_AGENT)
-                } catch (ex: Exception) {
-                    _uiState.update { it.copy(errorMessage = ex.message) }
-                    null
-                }
-                if (points != null) {
-                    _uiState.update { it.copy(spectrum = ensureSpectrum(points)) }
-                    fetched = true
-                    break
+            spectrumScanFallbackJob = launch {
+                delay(SPECTRUM_SCAN_FALLBACK_MS)
+                if (_uiState.value.isScanning) {
+                    refreshSpectrum(url)
+                    _uiState.update {
+                        it.copy(
+                            isScanning = false,
+                            statusMessage = it.statusMessage ?: SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                        )
+                    }
                 }
             }
-            if (!fetched) {
-                _uiState.update { it.copy(spectrum = ensureSpectrum(it.spectrum)) }
-            }
-            _uiState.update { it.copy(isScanning = false) }
-        }
-    }
-
-    fun refreshSpectrum() {
-        val url = _uiState.value.serverUrl
-        if (url.isBlank()) return
-        viewModelScope.launch {
-            refreshSpectrum(url)
         }
     }
 
@@ -332,8 +330,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(errorMessage = ex.message) }
             null
         }
-        if (points != null) {
-            _uiState.update { it.copy(spectrum = ensureSpectrum(points)) }
+        _uiState.update { state ->
+            when {
+                points != null && points.isNotEmpty() -> state.copy(
+                    spectrum = ensureSpectrum(points),
+                    statusMessage = null
+                )
+
+                points != null && points.isEmpty() -> state.copy(
+                    spectrum = emptyList(),
+                    statusMessage = null
+                )
+
+                else -> state.copy(
+                    statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                )
+            }
         }
     }
 
@@ -354,6 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         antennas = if (it.antennas.isEmpty() && it.tunerInfo != null) it.tunerInfo.antennaNames else it.antennas
                     )
                 }
+                scheduleLogoUpdate(url, state)
             },
             onClosed = {
                 logDebug("control socket: closed")
@@ -381,9 +394,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPluginConnection(url: String) {
         logDebug("startPluginConnection(): opening plugin socket")
         pluginConnection?.close()
-        pluginConnection = repository.connectPlugin(url, BuildConfig.USER_AGENT) { error ->
+        pluginConnection = repository.connectPlugin(
+            baseUrl = url,
+            userAgent = BuildConfig.USER_AGENT,
+            onEvent = { event -> handleSpectrumEvent(url, event) }
+        ) { error ->
             logDebug("plugin socket: error", error)
             _uiState.update { it.copy(errorMessage = error.message) }
+        }
+    }
+
+    private fun handleSpectrumEvent(baseUrl: String, event: SpectrumPluginEvent) {
+        event.points?.let { points ->
+            spectrumScanFallbackJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    spectrum = ensureSpectrum(points),
+                    isScanning = false
+                )
+            }
+        }
+        event.status?.let { status ->
+            val normalized = status.lowercase(Locale.ROOT)
+            when {
+                normalized.contains("scan") || normalized.contains("busy") -> {
+                    _uiState.update { it.copy(isScanning = true) }
+                }
+
+                normalized.contains("error") -> {
+                    spectrumScanFallbackJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            isScanning = false,
+                            errorMessage = status,
+                            statusMessage = status
+                        )
+                    }
+                }
+
+                normalized.contains("done") || normalized.contains("ready") ||
+                    normalized.contains("complete") || normalized.contains("idle") -> {
+                    spectrumScanFallbackJob?.cancel()
+                    _uiState.update { it.copy(isScanning = false) }
+                    if (event.points == null && baseUrl.isNotBlank()) {
+                        viewModelScope.launch { refreshSpectrum(baseUrl) }
+                    }
+                }
+            }
         }
     }
 
@@ -476,6 +533,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return points.ifEmpty { baselineSpectrum() }
     }
 
+    private fun scheduleLogoUpdate(baseUrl: String, state: TunerState?) {
+        val normalizedBase = baseUrl.trimEnd('/')
+        val piCode = state?.pi?.takeIf { !it.isNullOrBlank() }?.uppercase(Locale.ROOT)
+        val programName = state?.txInfo?.name?.takeIf { !it.isNullOrBlank() }
+            ?: state?.ps?.takeIf { !it.isNullOrBlank() }
+        val countryCode = state?.txInfo?.countryCode?.takeIf { !it.isNullOrBlank() }?.uppercase(Locale.ROOT)
+        val key = listOf(normalizedBase, piCode ?: "", programName ?: "", countryCode ?: "").joinToString("|")
+        if (key == lastLogoKey) return
+        lastLogoKey = key
+        stationLogoJob?.cancel()
+        stationLogoJob = viewModelScope.launch {
+            val logoUrl = runCatching {
+                repository.findStationLogo(
+                    baseUrl = normalizedBase,
+                    pi = piCode,
+                    program = programName,
+                    country = countryCode
+                )
+            }.getOrElse { throwable ->
+                if (throwable is CancellationException) throw throwable
+                DEFAULT_LOGO_URL
+            }
+            _uiState.update { it.copy(stationLogoUrl = logoUrl) }
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "fm_dx_prefs"
         private const val KEY_LAST_SERVER_URL = "last_server_url"
@@ -485,6 +568,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
         private const val KEY_RECENT_SERVER_URLS = "recent_server_urls"
         private const val TAG = "MainViewModel"
+        private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
+        private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE = "Spectrum data unavailable on this server."
+        const val DEFAULT_LOGO_URL = FmDxRepository.DEFAULT_LOGO_URL
 
         fun baselineSpectrum(): List<SpectrumPoint> {
             val list = mutableListOf<SpectrumPoint>()
@@ -612,5 +698,6 @@ data class UiState(
     val playerBuffer: Int = 2000,
     val restartAudioOnTune: Boolean = false,
     val statusMessage: String? = null,
-    val pendingFrequencyMHz: Double? = null
+    val pendingFrequencyMHz: Double? = null,
+    val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL
 )

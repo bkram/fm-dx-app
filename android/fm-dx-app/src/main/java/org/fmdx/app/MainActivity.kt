@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,6 +78,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +95,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
@@ -111,8 +115,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.decode.SvgDecoder
+import coil.request.ImageRequest
 import com.chargemap.compose.numberpicker.NumberPicker
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
@@ -121,8 +129,9 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
-import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
+import org.fmdx.app.model.TunerInfo
+import org.fmdx.app.model.TxInfo
 import org.fmdx.app.ui.theme.FmDxTheme
 import java.util.Locale
 import kotlin.math.abs
@@ -158,7 +167,6 @@ class MainActivity : ComponentActivity() {
                     onToggleIms = viewModel::toggleIms,
                     onCycleAntenna = viewModel::cycleAntenna,
                     onScan = viewModel::requestSpectrumScan,
-                    onRefreshSpectrum = viewModel::refreshSpectrum,
                     formatSignal = { s, unit -> viewModel.formatSignal(s, unit) },
                     currentPty = viewModel::currentPty,
                     antennaLabel = viewModel::antennaLabel,
@@ -182,7 +190,6 @@ private fun FmDxApp(
     onToggleIms: () -> Unit,
     onCycleAntenna: () -> Unit,
     onScan: () -> Unit,
-    onRefreshSpectrum: () -> Unit,
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
@@ -217,7 +224,6 @@ private fun FmDxApp(
                 onToggleIms = onToggleIms,
                 onCycleAntenna = onCycleAntenna,
                 onScan = onScan,
-                onRefreshSpectrum = onRefreshSpectrum,
                 formatSignal = formatSignal,
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
@@ -248,7 +254,6 @@ private fun MainScreen(
     onToggleIms: () -> Unit,
     onCycleAntenna: () -> Unit,
     onScan: () -> Unit,
-    onRefreshSpectrum: () -> Unit,
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
@@ -285,7 +290,6 @@ private fun MainScreen(
                     SpectrumSection(
                         state = state,
                         onScan = onScan,
-                        onRefreshSpectrum = onRefreshSpectrum,
                         onTuneDirect = onTuneDirect,
                         onDragStateChange = { dragging -> isSpectrumDragging = dragging }
                     )
@@ -1522,6 +1526,7 @@ private fun InformationSection(
         ) {
             RdsPsPiContent(tuner)
             RdsPtyEccContent(tuner, currentPty)
+            StationLogo(state.stationLogoUrl)
             RdsFlagsRow(tuner)
             val country = tuner?.countryName ?: tuner?.countryIso
             if (!country.isNullOrBlank()) {
@@ -1595,6 +1600,40 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
             text = ecc,
             textAlign = TextAlign.End
         )
+    }
+}
+
+@Composable
+private fun StationLogo(logoUrl: String?) {
+    if (logoUrl.isNullOrBlank()) return
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp, max = 160.dp),
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(logoUrl)
+                    .crossfade(true)
+                    .decoderFactory(SvgDecoder.Factory())
+                    .build(),
+                contentDescription = stringResource(id = R.string.station_logo_content_description),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp, max = 120.dp),
+                contentScale = ContentScale.Fit
+            )
+        }
     }
 }
 
@@ -1766,7 +1805,6 @@ private fun StationDetailRow(
 private fun SpectrumSection(
     state: UiState,
     onScan: () -> Unit,
-    onRefreshSpectrum: () -> Unit,
     onTuneDirect: (Double) -> Unit,
     onDragStateChange: (Boolean) -> Unit
 ) {
@@ -1775,21 +1813,41 @@ private fun SpectrumSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (state.isScanning) {
-                    LinearProgressIndicator()
+            if (state.isScanning) {
+                val scanningLabel = stringResource(id = R.string.spectrum_scanning)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .semantics {
+                                contentDescription = scanningLabel
+                            }
+                    )
+                    Text(
+                        text = scanningLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             val spectrum = state.spectrum
             if (spectrum.isEmpty()) {
                 onDragStateChange(false)
-                Text(text = stringResource(id = R.string.spectrum_unavailable))
+                Text(
+                    text = stringResource(id = R.string.spectrum_plugin_unavailable),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
-                val minSpectrumFreq = spectrum.first().frequencyMHz
-                val maxSpectrumFreq = spectrum.last().frequencyMHz
+                val sortedSpectrum = remember(spectrum) { spectrum.sortedBy { it.frequencyMHz } }
+                val frequencies = remember(sortedSpectrum) { sortedSpectrum.map { it.frequencyMHz } }
+                val minSpectrumFreq = frequencies.first()
+                val maxSpectrumFreq = frequencies.last()
+                val freqSpan = maxSpectrumFreq - minSpectrumFreq
                 val initialFreq =
                     (state.tunerState?.freqMHz ?: state.pendingFrequencyMHz ?: minSpectrumFreq)
                         .coerceIn(minSpectrumFreq, maxSpectrumFreq)
@@ -1820,7 +1878,78 @@ private fun SpectrumSection(
                     )
                 }
 
-                SpectrumGraph(points = spectrum, highlightFreq = sliderValue)
+                val minZoomFraction = 0.15f
+                var zoomProgress by rememberSaveable(minSpectrumFreq, maxSpectrumFreq) { mutableFloatStateOf(1f) }
+                val spanFraction = if (freqSpan <= 1e-6) 1f else minZoomFraction + (1f - minZoomFraction) * zoomProgress
+                val smallestGap = remember(frequencies) {
+                    frequencies.zipWithNext { a, b -> abs(b - a) }
+                        .minOrNull()
+                        ?.takeIf { it > 1e-6 }
+                }
+                val baseSpan = if (freqSpan <= 1e-6) 0.0 else freqSpan * spanFraction
+                val visibleSpan = when {
+                    freqSpan <= 1e-6 -> 0.0
+                    smallestGap == null -> baseSpan
+                    else -> max(baseSpan, smallestGap)
+                }
+                val halfSpan = visibleSpan / 2.0
+                var visibleMin = sliderValue - halfSpan
+                var visibleMax = sliderValue + halfSpan
+                if (visibleMin < minSpectrumFreq) {
+                    val overflow = minSpectrumFreq - visibleMin
+                    visibleMin += overflow
+                    visibleMax += overflow
+                }
+                if (visibleMax > maxSpectrumFreq) {
+                    val overflow = visibleMax - maxSpectrumFreq
+                    visibleMin -= overflow
+                    visibleMax -= overflow
+                }
+                visibleMin = visibleMin.coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                visibleMax = visibleMax.coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                if (visibleMax - visibleMin <= 1e-6) {
+                    visibleMin = minSpectrumFreq
+                    visibleMax = maxSpectrumFreq
+                }
+                val startIndex = frequencies.indexOfFirst { it >= visibleMin }.let { index ->
+                    if (index == -1) 0 else index
+                }
+                val endIndex = frequencies.indexOfLast { it <= visibleMax }.let { index ->
+                    if (index == -1) frequencies.lastIndex else index
+                }
+                val paddedStart = (startIndex - 1).coerceAtLeast(0)
+                val paddedEnd = (endIndex + 1).coerceAtMost(sortedSpectrum.lastIndex)
+                val pointsForGraph = if (paddedStart <= paddedEnd) {
+                    sortedSpectrum.subList(paddedStart, paddedEnd + 1)
+                } else {
+                    sortedSpectrum
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.spectrum_zoom),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    val zoomMultiplier = if (spanFraction > 0f) 1f / spanFraction else 1f
+                    Text(
+                        text = String.format(Locale.ROOT, "%.1fx", zoomMultiplier),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Slider(
+                    value = zoomProgress,
+                    onValueChange = { zoomProgress = it.coerceIn(0f, 1f) },
+                    valueRange = 0f..1f,
+                    steps = 9,
+                    enabled = freqSpan > 1e-6
+                )
+
+                SpectrumGraph(points = pointsForGraph, highlightFreq = sliderValue)
 
                 val sliderInteraction = remember { MutableInteractionSource() }
                 val sliderDragging by sliderInteraction.collectIsDraggedAsState()
@@ -1828,20 +1957,18 @@ private fun SpectrumSection(
                     onDragStateChange(sliderDragging)
                 }
 
-                val sliderSteps =
-                    ((maxSpectrumFreq - minSpectrumFreq) * 10).roundToInt().coerceAtLeast(1) - 1
+                val sliderSteps = (frequencies.size - 2).coerceAtLeast(0)
                 Slider(
                     value = sliderValue.toFloat(),
                     onValueChange = { raw ->
-                        val snapped = ((raw * 10f).roundToInt() / 10.0)
-                            .coerceIn(minSpectrumFreq, maxSpectrumFreq)
-                        sliderValue = snapped
+                        val target = raw.toDouble().coerceIn(minSpectrumFreq, maxSpectrumFreq)
+                        val nearest = frequencies.minByOrNull { abs(it - target) } ?: target
+                        sliderValue = nearest
                     },
                     onValueChangeFinished = {
-                        val snapped = ((sliderValue * 10).roundToInt() / 10.0)
                         val currentFreq = state.tunerState?.freqMHz
-                        if (currentFreq == null || abs(currentFreq - snapped) >= 0.0001) {
-                            onTuneDirect(snapped)
+                        if (currentFreq == null || abs(currentFreq - sliderValue) >= 0.0001) {
+                            onTuneDirect(sliderValue)
                         }
                         onDragStateChange(false)
                     },
@@ -1851,13 +1978,12 @@ private fun SpectrumSection(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onScan, enabled = !state.isScanning) {
-                    Text(text = stringResource(id = R.string.start_scan))
-                }
-                Button(onClick = onRefreshSpectrum) {
-                    Text(text = stringResource(id = R.string.refresh_spectrum))
-                }
+            Button(
+                onClick = onScan,
+                enabled = !state.isScanning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(id = R.string.start_scan))
             }
         }
     }
@@ -1868,17 +1994,23 @@ private fun SpectrumGraph(
     points: List<SpectrumPoint>,
     highlightFreq: Double
 ) {
-    if (points.isEmpty()) {
+    val validPoints = points
+        .filter { it.frequencyMHz.isFinite() && it.signalDbf.isFinite() }
+        .sortedBy { it.frequencyMHz }
+    if (validPoints.isEmpty()) {
         Text(text = stringResource(id = R.string.spectrum_unavailable))
         return
     }
-    val minFreq = points.first().frequencyMHz
-    val maxFreq = points.last().frequencyMHz
+    val minFreq = validPoints.first().frequencyMHz
+    val maxFreq = validPoints.last().frequencyMHz
     val freqSpan = (maxFreq - minFreq).coerceAtLeast(0.0001)
-    val maxSig = points.maxOfOrNull { it.signalDbf }?.coerceAtLeast(130.0) ?: 130.0
+    val maxSig = validPoints.maxOfOrNull { it.signalDbf } ?: 0.0
+    val minSig = validPoints.minOfOrNull { it.signalDbf } ?: maxSig
+    val signalSpan = (maxSig - minSig).takeIf { abs(it) >= 1e-6 } ?: 1.0
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
     val surfaceColor = MaterialTheme.colorScheme.surface
+    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
     val strokeWidthPx = with(LocalDensity.current) { 2.dp.toPx() }
 
     Card {
@@ -1890,19 +2022,32 @@ private fun SpectrumGraph(
             val width = size.width
             val height = size.height
 
-            drawRect(color = surfaceColor)
+            drawRect(color = backgroundColor)
             val path = Path()
-            points.forEachIndexed { index, point ->
+            var firstX = 0f
+            var lastX = 0f
+            validPoints.forEachIndexed { index, point ->
                 val ratio = ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
                 val x = ratio * width
-                val normalized = point.signalDbf.coerceIn(0.0, maxSig).toFloat() / maxSig.toFloat()
+                val normalized = ((point.signalDbf - minSig) / signalSpan)
+                    .toFloat()
+                    .coerceIn(0f, 1f)
                 val y = height - (normalized * height)
                 if (index == 0) {
+                    firstX = x
                     path.moveTo(x, y)
                 } else {
                     path.lineTo(x, y)
                 }
+                lastX = x
             }
+            val fillPath = Path().apply {
+                addPath(path)
+                lineTo(lastX, height)
+                lineTo(firstX, height)
+                close()
+            }
+            drawPath(fillPath, color = secondaryColor.copy(alpha = 0.18f))
             drawPath(path, color = secondaryColor, style = Stroke(width = strokeWidthPx))
             if (highlightFreq in minFreq..maxFreq) {
                 val highlightRatio =
@@ -1917,4 +2062,119 @@ private fun SpectrumGraph(
             }
         }
     }
+}
+
+@Preview(name = "Spectrum Section", showBackground = true, widthDp = 360)
+@Composable
+private fun SpectrumSectionPreview() {
+    FmDxTheme {
+        Surface {
+            val tunerState = previewTunerState()
+            SpectrumSection(
+                state = UiState(
+                    spectrum = previewSpectrum(),
+                    tunerState = tunerState,
+                    pendingFrequencyMHz = tunerState.freqMHz
+                ),
+                onScan = {},
+                onTuneDirect = {},
+                onDragStateChange = {}
+            )
+        }
+    }
+}
+
+@Preview(name = "Information Section", showBackground = true, widthDp = 360)
+@Composable
+private fun InformationSectionPreview() {
+    FmDxTheme {
+        Surface {
+            val tunerState = previewTunerState()
+            InformationSection(
+                state = UiState(
+                    tunerState = tunerState,
+                    stationLogoUrl = "https://tef.noobish.eu/logos/HOL/800A.png"
+                ),
+                currentPty = { "10/Pop Music" }
+            )
+        }
+    }
+}
+
+@Preview(name = "Station Logo", showBackground = true, widthDp = 240)
+@Composable
+private fun StationLogoPreview() {
+    FmDxTheme {
+        Surface {
+            StationLogo(logoUrl = "https://tef.noobish.eu/logos/HOL/800A.png")
+        }
+    }
+}
+
+private fun previewSpectrum(): List<SpectrumPoint> {
+    val start = 87.5
+    val end = 108.0
+    val step = 0.2
+    val points = mutableListOf<SpectrumPoint>()
+    var freq = start
+    var index = 0
+    while (freq <= end + 1e-6) {
+        val baseline = -70 + (index % 6) * 4
+        val boost = when {
+            freq in 99.0..100.0 -> 12.0
+            freq in 104.0..104.4 -> 7.0
+            else -> 0.0
+        }
+        val roundedFreq = (freq * 100).roundToInt() / 100.0
+        points += SpectrumPoint(
+            frequencyMHz = roundedFreq,
+            signalDbf = baseline.toDouble() + boost - (index / 30.0)
+        )
+        freq += step
+        index++
+    }
+    return points
+}
+
+private fun previewTunerState(): TunerState {
+    return TunerState(
+        freqMHz = 99.7,
+        minFreqMHz = 87.5,
+        maxFreqMHz = 108.0,
+        stepKHz = 100,
+        signalDbf = -48.0,
+        stereo = true,
+        ims = false,
+        eq = false,
+        antennaIndex = 1,
+        users = 4,
+        ps = "FMDX",
+        psErrors = List(8) { 0 },
+        pi = "800A",
+        ecc = "E1",
+        countryName = "Netherlands",
+        countryIso = "HOL",
+        tp = true,
+        ta = false,
+        ms = true,
+        pty = 10,
+        ptyText = "Pop Music",
+        dynamicPty = false,
+        artificialHead = false,
+        compressed = false,
+        rt0 = "Preview radio text line one    ",
+        rt0Errors = emptyList(),
+        rt1 = "Preview radio text line two",
+        rt1Errors = emptyList(),
+        afList = listOf(90.1, 94.5, 102.3),
+        txInfo = TxInfo(
+            name = "FM-DX Radio",
+            city = "The Hague",
+            countryCode = "HOL",
+            distanceKm = "12",
+            erpKw = "5",
+            polarization = "Horizontal",
+            azimuthDeg = "180"
+        )
+    )
 }

@@ -5,11 +5,14 @@
     <string name="start_scan">Scan</string>
     <string name="play_audio">Play Audio</string>
     <string name="stop_audio">Stop Audio</string>
-    <string name="refresh_spectrum">Refresh</string>
+    <string name="spectrum_plugin_unavailable">Spectrum data unavailable on this server.</string>
     <string name="server">Server</string>
     <string name="tuner">Tuner</string>
     <string name="rds">Information</string>
     <string name="spectrum">Spectrum</string>
+    <string name="spectrum_scanning">Scanning…</string>
+    <string name="spectrum_zoom">Zoom</string>
+    <string name="station_logo_content_description">Station logo</string>
     <string name="signal_unit">Signal unit</string>
     <string name="ims_on">iMS On</string>
     <string name="ims_off">iMS Off</string>

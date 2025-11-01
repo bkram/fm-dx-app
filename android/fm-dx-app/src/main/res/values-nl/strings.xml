@@ -6,11 +6,14 @@
     <string name="start_scan">Scannen</string>
     <string name="play_audio">Audio afspelen</string>
     <string name="stop_audio">Audio stoppen</string>
-    <string name="refresh_spectrum">Vernieuwen</string>
+    <string name="spectrum_plugin_unavailable">Spectrumgegevens niet beschikbaar op deze server.</string>
     <string name="server">Server</string>
     <string name="tuner">Tuner</string>
     <string name="rds">Informatie</string>
     <string name="spectrum">Spectrum</string>
+    <string name="spectrum_scanning">Scannen…</string>
+    <string name="spectrum_zoom">Zoom</string>
+    <string name="station_logo_content_description">Stationlogo</string>
     <string name="signal_unit">Signaaleenheid</string>
     <string name="ims_on">iMS aan</string>
     <string name="ims_off">iMS uit</string>

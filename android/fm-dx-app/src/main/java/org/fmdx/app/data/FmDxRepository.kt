@@ -18,17 +18,25 @@ import org.fmdx.app.BuildConfig
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
+import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.io.EOFException
 import java.io.IOException
 import java.net.SocketException
+import java.util.Locale
+
+data class SpectrumPluginEvent(
+    val status: String? = null,
+    val points: List<SpectrumPoint>? = null
+)
 
 class FmDxRepository(
     val client: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
+    private val logoCache = mutableMapOf<String, String?>()
     fun connectControl(
         baseUrl: String,
         userAgent: String,
@@ -93,6 +101,7 @@ class FmDxRepository(
     fun connectPlugin(
         baseUrl: String,
         userAgent: String,
+        onEvent: (SpectrumPluginEvent) -> Unit,
         onError: (Throwable) -> Unit
     ): PluginConnection {
         val wsUrl = buildWebSocketUrl(baseUrl, "data_plugins")
@@ -106,11 +115,134 @@ class FmDxRepository(
                 logDebug("plugin socket: open with response=${response.code}")
             }
 
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                logDebug("plugin socket: message length=${text.length}")
+                try {
+                    val json = JSONObject(text)
+                    val payload = json.optJSONObject("value") ?: json
+                    val status = payload.optString("status").takeIf { it.isNotBlank() }
+                    val points = parseSpectrumDataset(payload)
+                    onEvent(SpectrumPluginEvent(status = status, points = points))
+                } catch (ex: Exception) {
+                    logDebug("plugin socket: failed to parse message", ex)
+                }
+            }
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 handleWebSocketFailure("plugin", t, response, onError)
             }
         })
         return PluginConnection(webSocket)
+    }
+
+    suspend fun findStationLogo(
+        baseUrl: String,
+        pi: String?,
+        program: String?,
+        country: String?
+    ): String = withContext(ioDispatcher) {
+        val normalizedBase = baseUrl.trimEnd('/')
+        val cacheKey = listOf(normalizedBase, pi ?: "", program ?: "", country ?: "").joinToString("|")
+        logoCache[cacheKey]?.let { cached ->
+            logDebug("findStationLogo(): cache hit -> $cached")
+            return@withContext cached
+        }
+
+        val uppercasePi = pi?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+        val sanitizedProgram = program
+            ?.uppercase(Locale.ROOT)
+            ?.replace(LOGO_SANITIZE_REGEX, "")
+            ?.takeIf { it.isNotBlank() }
+
+        val filenames = buildList {
+            if (uppercasePi != null) {
+                if (sanitizedProgram != null) {
+                    add("${uppercasePi}_${sanitizedProgram}.svg")
+                    add("${uppercasePi}_${sanitizedProgram}.png")
+                    add("${uppercasePi}_${sanitizedProgram}.gif")
+                }
+                add("${uppercasePi}.svg")
+                add("${uppercasePi}.png")
+                add("${uppercasePi}.gif")
+            }
+        }
+
+        val localBase = "$normalizedBase/$LOGO_PATH"
+        filenames.forEach { filename ->
+            val candidate = "$localBase/$filename"
+            if (urlExists(candidate)) {
+                logDebug("findStationLogo(): local hit -> $candidate")
+                logoCache[cacheKey] = candidate
+                return@withContext candidate
+            }
+        }
+
+        val countryCode = country?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+        if (countryCode != null && uppercasePi != null) {
+            findRemoteLogo(countryCode, uppercasePi, sanitizedProgram, filenames)?.let { remote ->
+                logDebug("findStationLogo(): remote hit -> $remote")
+                logoCache[cacheKey] = remote
+                return@withContext remote
+            }
+        }
+
+        logDebug("findStationLogo(): no logo found, falling back to default")
+        logoCache[cacheKey] = DEFAULT_LOGO_URL
+        DEFAULT_LOGO_URL
+    }
+
+    private fun findRemoteLogo(
+        countryCode: String,
+        piCode: String,
+        sanitizedProgram: String?,
+        filenames: List<String>
+    ): String? {
+        val request = Request.Builder()
+            .url("$REMOTE_LOGO_BASE/logo_directory.html")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                val document = Jsoup.parse(body)
+                val folderElement = document.select(".folder").firstOrNull { element ->
+                    element.text().trim().endsWith("./$countryCode")
+                } ?: return null
+                val fileContainer = folderElement.nextElementSibling() ?: return null
+                val available = fileContainer.select(".file a")
+                    .mapNotNull { it.text()?.trim() }
+                    .toSet()
+                val priority = buildList {
+                    if (sanitizedProgram != null) {
+                        add("${piCode}_${sanitizedProgram}.svg")
+                        add("${piCode}_${sanitizedProgram}.png")
+                        add("${piCode}_${sanitizedProgram}.gif")
+                    }
+                    add("${piCode}.svg")
+                    add("${piCode}.png")
+                    add("${piCode}.gif")
+                }
+                priority.forEach { filename ->
+                    if (filename in available) {
+                        val resolved = "$REMOTE_LOGO_BASE/$countryCode/$filename"
+                        logDebug("findRemoteLogo(): directory match -> $resolved")
+                        return resolved
+                    }
+                }
+                // fallback to direct URL checks if HTML structure differs
+                filenames.forEach { filename ->
+                    val candidate = "$REMOTE_LOGO_BASE/$countryCode/$filename"
+                    if (urlExists(candidate)) {
+                        logDebug("findRemoteLogo(): direct match -> $candidate")
+                        return candidate
+                    }
+                }
+                null
+            }
+        } catch (_: Exception) {
+            logDebug("findRemoteLogo(): failed to parse remote directory for $countryCode")
+            null
+        }
     }
 
     suspend fun fetchTunerInfo(url: String, userAgent: String): TunerInfo =
@@ -229,23 +361,7 @@ class FmDxRepository(
                 }
                 val body = response.body?.string() ?: return@use null
                 val json = JSONObject(body)
-                val dataset = when {
-                    json.optString("sd").isNotBlank() -> json.optString("sd")
-                    json.has("ad") -> {
-                        val ad = json.optInt("ad")
-                        json.optString("sd$ad")
-                    }
-
-                    else -> null
-                } ?: return@use null
-                dataset.split(',')
-                    .mapNotNull { pair ->
-                        val parts = pair.split('=')
-                        if (parts.size != 2) return@mapNotNull null
-                        val freq = parts[0].toDoubleOrNull()?.div(1000.0)
-                        val sig = parts[1].toDoubleOrNull()
-                        if (freq != null && sig != null) SpectrumPoint(freq, sig) else null
-                    }
+                parseSpectrumDataset(json)
             }
         }
 
@@ -264,10 +380,92 @@ class FmDxRepository(
         onError(IOException(message, t))
     }
 
+    private fun parseSpectrumDataset(json: JSONObject): List<SpectrumPoint>? {
+        parseSpectrumPointsArray(json.optJSONArray("points"))?.let { return it }
+
+        val candidateKeys = mutableListOf<String>()
+        if (json.has("sd")) candidateKeys += "sd"
+        if (json.has("ad")) {
+            val active = json.opt("ad")
+            val key = when (active) {
+                is Number -> "sd${active.toInt()}"
+                is String -> "sd$active"
+                else -> null
+            }
+            if (key != null) candidateKeys += key
+        }
+        val keysIterator = json.keys()
+        while (keysIterator.hasNext()) {
+            val key = keysIterator.next()
+            if (key.startsWith("sd")) candidateKeys += key
+        }
+        candidateKeys.distinct().forEach { key ->
+            val data = json.optString(key, "")
+            parseSpectrumString(data)?.let { return it }
+        }
+        // some payloads nest dataset under "value"
+        json.optJSONObject("value")?.let { nested ->
+            parseSpectrumDataset(nested)?.let { return it }
+        }
+        return null
+    }
+
+    private fun parseSpectrumPointsArray(array: JSONArray?): List<SpectrumPoint>? {
+        if (array == null) return null
+        val result = mutableListOf<SpectrumPoint>()
+        for (i in 0 until array.length()) {
+            val entry = array.optJSONObject(i) ?: continue
+            val freq = entry.optDouble("freq", Double.NaN)
+            val level = entry.optDouble("level", Double.NaN)
+            if (!freq.isNaN() && !level.isNaN()) {
+                result += SpectrumPoint(freq, level)
+            } else {
+                val x = entry.optDouble("x", Double.NaN)
+                val y = entry.optDouble("y", Double.NaN)
+                if (!x.isNaN() && !y.isNaN()) {
+                    result += SpectrumPoint(x, y)
+                }
+            }
+        }
+        return result.takeIf { it.isNotEmpty() }
+    }
+
+    private fun parseSpectrumString(dataset: String?): List<SpectrumPoint>? {
+        if (dataset.isNullOrBlank()) return null
+        val points = dataset.split(',')
+            .mapNotNull { pair ->
+                val parts = pair.split('=')
+                if (parts.size != 2) return@mapNotNull null
+                val freq = parts[0].toDoubleOrNull()?.div(1000.0)
+                val sig = parts[1].toDoubleOrNull()
+                if (freq != null && sig != null) SpectrumPoint(freq, sig) else null
+            }
+        return points.takeIf { it.isNotEmpty() }
+    }
+
+    private fun urlExists(url: String): Boolean {
+        return try {
+            client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .method("HEAD", null)
+                    .build()
+            ).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     companion object {
         private const val COMMAND_THROTTLE_MS = 125L
         private const val TIMEOUT_MS = 10000L
         private const val TAG = "FmDxRepository"
+        private const val REMOTE_LOGO_BASE = "https://tef.noobish.eu/logos"
+        const val DEFAULT_LOGO_URL = "$REMOTE_LOGO_BASE/default-logo.png"
+        private const val LOGO_PATH = "logos"
+        private val LOGO_SANITIZE_REGEX = Regex("[/\\-*+:.,§%&\"!?|><=)(\\[\\]´`'~#\\s]")
     }
 
     private fun logDebug(message: String, throwable: Throwable? = null) {
@@ -311,8 +509,9 @@ fun buildWebSocketUrl(url: String, vararg pathSegments: String): String {
     val httpUrl = url.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid server URL")
     val builder = httpUrl.newBuilder()
     pathSegments.forEach { segment ->
-        if (segment.isNotEmpty()) {
-            builder.addPathSegment(segment.trim('/'))
+        val trimmed = segment.trim('/')
+        if (trimmed.isNotEmpty()) {
+            builder.addPathSegment(trimmed)
         }
     }
     val built = builder.build()
