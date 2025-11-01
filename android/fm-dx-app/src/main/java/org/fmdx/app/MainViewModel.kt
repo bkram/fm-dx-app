@@ -72,16 +72,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.let { if (it.isDone) it.get() else null }
 
-
-    private val europeProgrammes = listOf(
-        "No PTY", "News", "Current Affairs", "Info",
-        "Sport", "Education", "Drama", "Culture", "Science", "Varied",
-        "Pop M", "Rock M", "Easy Listening", "Light Classical",
-        "Serious Classical", "Other Music", "Weather", "Finance",
-        "Children's Programmes", "Social Affairs", "Religion", "Phone-in",
-        "Travel", "Leisure", "Jazz Music", "Country Music", "National Music",
-        "Oldies Music", "Folk Music", "Documentary", "Alarm Test"
-    )
+    private val ptyProgrammes: List<String> =
+        application.resources.getStringArray(R.array.pty_programmes_europe).toList()
+    private val unknownPtyLabel: String = application.getString(R.string.rds_pty_unknown)
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
@@ -331,18 +324,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             null
         }
         _uiState.update { state ->
-            when {
-                points != null && points.isNotEmpty() -> state.copy(
-                    spectrum = ensureSpectrum(points),
+            val spectrumPoints = when {
+                points == null -> null
+                points.isEmpty() -> emptyList()
+                else -> ensureSpectrum(points)
+            }
+            if (spectrumPoints != null) {
+                state.copy(
+                    spectrum = spectrumPoints,
                     statusMessage = null
                 )
-
-                points != null && points.isEmpty() -> state.copy(
-                    spectrum = emptyList(),
-                    statusMessage = null
-                )
-
-                else -> state.copy(
+            } else {
+                state.copy(
                     statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
                 )
             }
@@ -479,8 +472,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun currentPty(state: TunerState?): String {
-        val display = state?.ptyDisplay(europeProgrammes)?.trim() ?: ""
-        return if (display.equals("0/No PTY", ignoreCase = true) || display.equals("0/None", ignoreCase = true)) {
+        val display = state?.ptyDisplay(ptyProgrammes, unknownPtyLabel)?.trim() ?: ""
+        if (display.isBlank()) return ""
+        val normalized = display.substringAfter('/')
+        val noPtyLabel = ptyProgrammes.firstOrNull().orEmpty()
+        return if (display.startsWith("0/", ignoreCase = true) &&
+            (normalized.equals(noPtyLabel, ignoreCase = true) ||
+                normalized.equals(unknownPtyLabel, ignoreCase = true))
+        ) {
             ""
         } else {
             display
@@ -535,10 +534,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun scheduleLogoUpdate(baseUrl: String, state: TunerState?) {
         val normalizedBase = baseUrl.trimEnd('/')
-        val piCode = state?.pi?.takeIf { !it.isNullOrBlank() }?.uppercase(Locale.ROOT)
-        val programName = state?.txInfo?.name?.takeIf { !it.isNullOrBlank() }
-            ?: state?.ps?.takeIf { !it.isNullOrBlank() }
-        val countryCode = state?.txInfo?.countryCode?.takeIf { !it.isNullOrBlank() }?.uppercase(Locale.ROOT)
+        val piCode = state?.pi?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+        val programName = state?.txInfo?.name?.takeIf { it.isNotBlank() }
+            ?: state?.ps?.takeIf { it.isNotBlank() }
+        val countryCode = state?.txInfo?.countryCode?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
         val key = listOf(normalizedBase, piCode ?: "", programName ?: "", countryCode ?: "").joinToString("|")
         if (key == lastLogoKey) return
         lastLogoKey = key

@@ -39,9 +39,9 @@ data class TunerState(
     val freqKHz: Int?
         get() = freqMHz?.let { (it * 1000).roundToInt() }
 
-    fun ptyDisplay(europeProgrammes: List<String>): String {
+    fun ptyDisplay(europeProgrammes: List<String>, unknownLabel: String): String {
         val number = pty ?: 0
-        val name = europeProgrammes.getOrNull(number) ?: "None"
+        val name = europeProgrammes.getOrNull(number) ?: unknownLabel
         return "$number/$name"
     }
 

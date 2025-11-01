@@ -35,7 +35,10 @@
     <string name="settings_display_title">Display</string>
     <string name="settings_audio_buffering_title">Audio Buffering</string>
     <string name="settings_audio_buffering_desc">Lower values can reduce latency, but may cause stuttering on unstable connections.</string>
-    <string name="settings_current_buffers">Current buffers: %1$d chunks / %2$d ms</string>
+    <plurals name="settings_current_buffers">
+        <item quantity="one">Current buffers: %1$d chunk / %2$d ms</item>
+        <item quantity="other">Current buffers: %1$d chunks / %2$d ms</item>
+    </plurals>
     <string name="settings_network_buffer_label">Network Buffer (chunks)</string>
     <string name="settings_player_buffer_label">Player Buffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
@@ -55,11 +58,46 @@
     <string name="rds_flag_ms_music_full">Music programme</string>
     <string name="rds_flag_ms_speech" translatable="false">Speech</string>
     <string name="rds_flag_ms_speech_full">Speech programme</string>
-    <string name="state_on">On</string>
-    <string name="state_off">Off</string>
+    <string name="status_state_on">On</string>
+    <string name="status_state_off">Off</string>
     <string name="rds_pty_label" translatable="false">PTY: %1$s</string>
+    <string name="rds_pty_unknown">None</string>
+    <string name="pty_programme_0">No PTY</string>
+    <string name="pty_programme_1">News</string>
+    <string name="pty_programme_2">Current Affairs</string>
+    <string name="pty_programme_3">Info</string>
+    <string name="pty_programme_4">Sport</string>
+    <string name="pty_programme_5">Education</string>
+    <string name="pty_programme_6">Drama</string>
+    <string name="pty_programme_7">Culture</string>
+    <string name="pty_programme_8">Science</string>
+    <string name="pty_programme_9">Varied</string>
+    <string name="pty_programme_10">Pop M</string>
+    <string name="pty_programme_11">Rock M</string>
+    <string name="pty_programme_12">Easy Listening</string>
+    <string name="pty_programme_13">Light Classical</string>
+    <string name="pty_programme_14">Serious Classical</string>
+    <string name="pty_programme_15">Other Music</string>
+    <string name="pty_programme_16">Weather</string>
+    <string name="pty_programme_17">Finance</string>
+    <string name="pty_programme_18">Children\'s Programmes</string>
+    <string name="pty_programme_19">Social Affairs</string>
+    <string name="pty_programme_20">Religion</string>
+    <string name="pty_programme_21">Phone-in</string>
+    <string name="pty_programme_22">Travel</string>
+    <string name="pty_programme_23">Leisure</string>
+    <string name="pty_programme_24">Jazz Music</string>
+    <string name="pty_programme_25">Country Music</string>
+    <string name="pty_programme_26">National Music</string>
+    <string name="pty_programme_27">Oldies Music</string>
+    <string name="pty_programme_28">Folk Music</string>
+    <string name="pty_programme_29">Documentary</string>
+    <string name="pty_programme_30">Alarm Test</string>
     <string name="rds_di_label" translatable="false">DI: %1$s</string>
-    <string name="af_frequencies">%1$d frequencies</string>
+    <plurals name="af_frequencies">
+        <item quantity="one">%1$d frequency</item>
+        <item quantity="other">%1$d frequencies</item>
+    </plurals>
     <string name="none">None</string>
     <string name="rds_af_label" translatable="false">AF: %1$s</string>
     <string name="radiotext_label">RadioText:</string>
