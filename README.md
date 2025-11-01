@@ -13,6 +13,16 @@ custom security provider.
 - Inspect real-time signal levels (dBf, dBµV, dBm), RDS/RadioText, and transmitter metadata.
 - Visualise spectrum data from the Spectrum Graph plugin and trigger scans when available.
 
+## Prerequisites
+
+This app talks to an FM-DX Webserver. To see the full UI (logos and spectrum graph) make sure the
+remote server has the following plugins installed and enabled:
+
+- [Spectrum Graph plugin](https://github.com/AmateurAudioDude/FM-DX-Webserver-Plugin-Spectrum-Graph)
+- [Station logo plugin](https://github.com/Highpoint2000/webserver-station-logos)
+
+Without them the spectrum tab and station artwork will fall back to placeholder content.
+
 ## Requirements
 - JDK 21 (matching the module’s Java toolchain).
 - Android SDK preview packages for API 36.1:

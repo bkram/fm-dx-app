@@ -16,6 +16,8 @@
 - Keep the UI modern and Compose-first: add or update composables with previews where practical so
   layouts stay testable, and avoid touching the audio playback stack unless a task explicitly calls
   for it.
+- Keep business logic in ViewModels and leave composables in `MainUi.kt` (or feature-specific UI
+  files) so previews and UI-only changes never leak into the state layer.
 - Preserve existing card grouping within each section; don't introduce new swipe carousels or
   restructure detail panes unless a ticket requests it.
 
