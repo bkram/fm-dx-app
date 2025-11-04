@@ -88,7 +88,6 @@ import androidx.compose.ui.Alignment.Companion.Center
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -164,12 +163,12 @@ internal fun FmDxApp(
             SettingsScreen(
                 state = state,
                 onUpdateSettings = onUpdateSettings,
-                onBack = { showSettings = false }
+                onBack = { }
             )
         }
 
         showAbout -> {
-            AboutScreen(onBack = { showAbout = false })
+            AboutScreen(onBack = { })
         }
 
         else -> {
@@ -190,12 +189,8 @@ internal fun FmDxApp(
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
                 onShowSettings = {
-                    showAbout = false
-                    showSettings = true
                 },
                 onShowAbout = {
-                    showSettings = false
-                    showAbout = true
                 }
             )
         }
@@ -791,7 +786,7 @@ private fun FrequencyControlsCard(
     val decimalLoopCount = if (decimalSteps > 1) 30 else 1
     val decimalRangeSize = decimalSteps * decimalLoopCount
     val decimalRange =
-        if (decimalSteps > 1 && decimalRangeSize > 0) 0..(decimalRangeSize - 1) else 0..0
+        if (decimalSteps > 1 && decimalRangeSize > 0) 0..<decimalRangeSize else 0..0
 
     var decimalPickerPosition by rememberSaveable { mutableIntStateOf(0) }
 
@@ -866,9 +861,9 @@ private fun FrequencyControlsCard(
             }
     }
 
-    remember(stepKHz) {
-        Array(max(1, decimalSteps)) { index ->
-            String.format(Locale.ROOT, "%02d", (index * stepKHz) / 10)
+    val decimalDisplayValues = remember(stepKHz) {
+        IntArray(max(1, decimalSteps)) { index ->
+            (index * stepKHz) / 10
         }
     }
 
@@ -961,18 +956,21 @@ private fun FrequencyControlsCard(
                 style = pickerTextStyle,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
-            val decimalItems = remember(
+            val decimalDisplayItems = remember(
                 selectedMHz,
                 minDecimalIndexForSelectedMhz,
                 maxDecimalIndexForSelectedMhz
             ) {
-                (minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz).toList()
-                    .toPersistentList()
+                (minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz).map { index ->
+                    decimalDisplayValues.getOrElse(index) { index }
+                }.toPersistentList()
             }
-            val decimalSelectedValue = selectedDecimalIndex.coerceIn(
-                minDecimalIndexForSelectedMhz,
-                maxDecimalIndexForSelectedMhz
-            )
+            val decimalSelectedDisplayValue = decimalDisplayValues.getOrElse(
+                selectedDecimalIndex.coerceIn(
+                    minDecimalIndexForSelectedMhz,
+                    maxDecimalIndexForSelectedMhz
+                )
+            ) { 0 }
             Box(
                 modifier = Modifier
                     .width(pickerWidth)
@@ -981,66 +979,16 @@ private fun FrequencyControlsCard(
                 contentAlignment = Center
             ) {
                 NumberPicker(
-                    value = decimalSelectedValue,
-                    range = decimalItems,
-                    onValueChange = { newDecimal ->
+                    value = decimalSelectedDisplayValue,
+                    range = decimalDisplayItems,
+                    onValueChange = { newDisplayValue ->
                         if (!isControlReady) return@NumberPicker
-                        val value = newDecimal.coerceIn(decimalRange.first, decimalRange.last)
-                        val previousPosition = decimalPickerPosition
-                        val previousDecimal = wrappedDecimalIndex(previousPosition)
-                        var nextPickerPosition = alignPickerPositionToIndex(previousPosition, value)
-                        var nextMHz = selectedMHz
-                        var nextDecimal = value
-
-                        if (decimalSteps > 1) {
-                            val minForCurrent = minDecimalIndexFor(nextMHz)
-                            val maxForCurrent = maxDecimalIndexFor(nextMHz)
-                            val direction = value - previousDecimal
-                            val wrapsForward =
-                                direction > 0 && previousDecimal == maxForCurrent && nextMHz < maxMhz
-                            val wrapsBackward =
-                                direction < 0 && previousDecimal == minForCurrent && nextMHz > minMhz
-
-                            when {
-                                wrapsForward -> {
-                                    val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
-                                    nextMHz = candidateMHz
-                                    val candidateMin = minDecimalIndexFor(candidateMHz)
-                                    nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
-                                    nextPickerPosition =
-                                        alignPickerPositionToIndex(value, nextDecimal)
-                                }
-
-                                wrapsBackward -> {
-                                    val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
-                                    nextMHz = candidateMHz
-                                    val candidateMax = maxDecimalIndexFor(candidateMHz)
-                                    nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
-                                    nextPickerPosition =
-                                        alignPickerPositionToIndex(value, nextDecimal)
-                                }
-
-                                else -> {
-                                    nextDecimal = nextDecimal.coerceIn(minForCurrent, maxForCurrent)
-                                    nextPickerPosition =
-                                        alignPickerPositionToIndex(value, nextDecimal)
-                                }
-                            }
-                        } else {
-                            nextDecimal = 0
-                            nextPickerPosition = decimalRange.first
-                        }
-
-                        val coercedPicker =
-                            nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
-                        if (coercedPicker != decimalPickerPosition) {
-                            decimalPickerPosition = coercedPicker
-                        }
-                        if (nextMHz != selectedMHz) {
-                            selectedMHz = nextMHz
-                        }
-                        if (nextDecimal != selectedDecimalIndex) {
-                            selectedDecimalIndex = nextDecimal
+                        val normalizedIndex = ((newDisplayValue * 10) / stepKHz).coerceIn(
+                            minDecimalIndexForSelectedMhz,
+                            maxDecimalIndexForSelectedMhz
+                        )
+                        if (selectedDecimalIndex != normalizedIndex) {
+                            selectedDecimalIndex = normalizedIndex
                         }
                         isUserInteracting = true
                     },
@@ -1087,12 +1035,16 @@ private fun TunerSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (tunerState != null) {
-                    RdsPsPiContent(tunerState)
-                    RdsPtyEccContent(tunerState, currentPty)
-                    RdsRadiotextContent(tunerState)
-                    HorizontalDivider()
-                }
+                RdsPsPiContent(tunerState)
+                RdsPtyEccContent(tunerState, currentPty)
+                RdsRadiotextContent(tunerState)
+            }
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1123,12 +1075,17 @@ private fun TunerSection(
                         )
                     }
                 }
-                HorizontalDivider()
                 FrequencyControlsCard(
                     state = state,
                     onTuneDirect = onTuneDirect
                 )
-                HorizontalDivider()
+            }
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 ControlButtons(
                     state = state,
                     onToggleEq = onToggleEq,
@@ -1575,61 +1532,72 @@ private fun InformationSection(
     currentPty: (TunerState?) -> String
 ) {
     val tuner = state.tunerState
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (!state.stationLogoUrl.isNullOrBlank()) {
-                StationLogo(state.stationLogoUrl)
-            }
-            RdsPsPiContent(tuner)
-            RdsPtyEccContent(tuner, currentPty)
-            RdsFlagsRow(tuner)
-            val country = tuner?.countryName ?: tuner?.countryIso
-            if (!country.isNullOrBlank()) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (!state.stationLogoUrl.isNullOrBlank()) {
+            StationLogo(state.stationLogoUrl)
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                RdsPsPiContent(tuner)
+                RdsPtyEccContent(tuner, currentPty)
+                RdsFlagsRow(tuner)
+                val country = tuner?.countryName ?: tuner?.countryIso
+                if (!country.isNullOrBlank()) {
+                    RdsLabelValueRow(
+                        label = stringResource(
+                            id = R.string.country_label,
+                            ""
+                        )
+                    ) { valueModifier ->
+                        Text(
+                            text = country,
+                            modifier = valueModifier
+                        )
+                    }
+                }
+                tuner?.diDisplay()?.let { di ->
+                    RdsLabelValueRow(
+                        label = stringResource(
+                            id = R.string.rds_di_label,
+                            ""
+                        )
+                    ) { valueModifier ->
+                        Text(
+                            text = di,
+                            modifier = valueModifier
+                        )
+                    }
+                }
+                val afText = tuner?.afList?.size?.let { count ->
+                    pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
+                } ?: stringResource(id = R.string.none)
                 RdsLabelValueRow(
                     label = stringResource(
-                        id = R.string.country_label,
+                        id = R.string.rds_af_label,
                         ""
                     )
                 ) { valueModifier ->
                     Text(
-                        text = country,
+                        text = afText,
                         modifier = valueModifier
                     )
                 }
+                RdsRadiotextContent(tuner)
             }
-            tuner?.diDisplay()?.let { di ->
-                RdsLabelValueRow(
-                    label = stringResource(
-                        id = R.string.rds_di_label,
-                        ""
-                    )
-                ) { valueModifier ->
-                    Text(
-                        text = di,
-                        modifier = valueModifier
-                    )
-                }
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StationDetailsContent(state)
             }
-            val afText = tuner?.afList?.size?.let { count ->
-                pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
-            } ?: stringResource(id = R.string.none)
-            RdsLabelValueRow(
-                label = stringResource(
-                    id = R.string.rds_af_label,
-                    ""
-                )
-            ) { valueModifier ->
-                Text(
-                    text = afText,
-                    modifier = valueModifier
-                )
-            }
-            RdsRadiotextContent(tuner)
-            HorizontalDivider()
-            StationDetailsContent(state)
         }
     }
 }
@@ -1665,13 +1633,15 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
 private fun StationLogo(logoUrl: String?) {
     if (logoUrl.isNullOrBlank()) return
     val context = LocalContext.current
-    Surface(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp, max = 160.dp),
         shape = RoundedCornerShape(16.dp),
-        tonalElevation = 0.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(
             modifier = Modifier
@@ -1810,30 +1780,40 @@ private fun StationDetailsContent(state: UiState) {
         )
         StationDetailRow(
             labelRes = R.string.station_location_label,
-            value = tx?.city ?: stringResource(id = R.string.default_value)
-        )
-        StationDetailRow(
-            labelRes = R.string.station_country_label,
-            value = tx?.countryCode ?: stringResource(id = R.string.default_value)
-        )
-        StationDetailRow(
-            labelRes = R.string.station_distance_label,
-            value = tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
+            value = buildList {
+                tx?.city?.takeUnless { it.isBlank() }?.let(::add)
+                tx?.countryCode?.takeUnless { it.isBlank() }?.let(::add)
+            }
+                .takeUnless { it.isEmpty() }
+                ?.joinToString(", ")
                 ?: stringResource(id = R.string.default_value)
         )
-        StationDetailRow(
-            labelRes = R.string.station_power_label,
-            value = tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) }
-                ?: stringResource(id = R.string.default_value)
+        StationMetricsRow(
+            metrics = listOf(
+                StationMetricData(
+                    labelRes = R.string.station_distance_label,
+                    value = tx?.distanceKm?.let { stringResource(id = R.string.km_unit, it) }
+                        ?: stringResource(id = R.string.default_value)
+                ),
+                StationMetricData(
+                    labelRes = R.string.station_power_label,
+                    value = tx?.erpKw?.let { stringResource(id = R.string.kw_unit, it) }
+                        ?: stringResource(id = R.string.default_value)
+                )
+            )
         )
-        StationDetailRow(
-            labelRes = R.string.station_polarization_label,
-            value = tx?.polarization ?: stringResource(id = R.string.default_value)
-        )
-        StationDetailRow(
-            labelRes = R.string.station_azimuth_label,
-            value = tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
-                ?: stringResource(id = R.string.default_value)
+        StationMetricsRow(
+            metrics = listOf(
+                StationMetricData(
+                    labelRes = R.string.station_polarization_label,
+                    value = tx?.polarization ?: stringResource(id = R.string.default_value)
+                ),
+                StationMetricData(
+                    labelRes = R.string.station_azimuth_label,
+                    value = tx?.azimuthDeg?.let { stringResource(id = R.string.deg_unit, it) }
+                        ?: stringResource(id = R.string.default_value)
+                )
+            )
         )
     }
 }
@@ -1855,6 +1835,44 @@ private fun StationDetailRow(
         Text(
             text = value,
             modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun StationMetricsRow(
+    metrics: List<StationMetricData>
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        metrics.forEach { metric ->
+            StationMetric(labelRes = metric.labelRes, value = metric.value)
+        }
+    }
+}
+
+private data class StationMetricData(
+    @param:StringRes val labelRes: Int,
+    val value: String
+)
+
+@Composable
+private fun StationMetric(
+    @StringRes labelRes: Int,
+    value: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RdsLabelText(
+            text = stringResource(id = labelRes, "")
+        )
+        Text(
+            text = value,
+            modifier = Modifier.padding(start = 4.dp)
         )
     }
 }
