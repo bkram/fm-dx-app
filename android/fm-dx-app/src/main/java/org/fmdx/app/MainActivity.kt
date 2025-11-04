@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
                     onTuneDirect = viewModel::tuneToFrequency,
                     onToggleEq = viewModel::toggleEq,
                     onToggleIms = viewModel::toggleIms,
+                    onToggleStereoMode = viewModel::toggleStereoMode,
                     onCycleAntenna = viewModel::cycleAntenna,
                     onScan = viewModel::requestSpectrumScan,
                     formatSignal = { s, unit -> viewModel.formatSignal(s, unit) },

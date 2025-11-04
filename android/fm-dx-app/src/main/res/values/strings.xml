@@ -46,6 +46,11 @@
     <string name="server_url">Server URL</string>
     <string name="default_value" translatable="false"> </string>
     <string name="rds_ps_label" translatable="false">PS: </string>
+    <string name="rds_audio_mode_chip_label_stereo" translatable="false">ST</string>
+    <string name="rds_audio_mode_chip_label_mono" translatable="false">MO</string>
+    <string name="rds_audio_mode_stereo">Stereo</string>
+    <string name="rds_audio_mode_mono">Mono</string>
+    <string name="rds_audio_mode_content_description">Audio mode: %1$s</string>
     <string name="rds_pi_label" translatable="false">PI: %1$s</string>
     <string name="rds_ecc_label" translatable="false">ECC: %1$s</string>
     <string name="country_label">Country: %1$s</string>

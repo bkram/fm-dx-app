@@ -76,7 +76,8 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-test-manifest:1.9.4'
 
     implementation 'androidx.compose.foundation:foundation:1.9.4'
-    implementation 'com.chargemap.compose:numberpicker:1.0.3'
+    implementation 'com.seo4d696b75.compose:material3-picker:0.1.6'
+    implementation 'org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0'
     implementation 'io.coil-kt:coil-compose:2.7.0'
     implementation 'io.coil-kt:coil-svg:2.7.0'
 

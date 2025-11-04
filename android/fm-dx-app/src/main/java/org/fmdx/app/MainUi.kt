@@ -119,9 +119,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
-import com.chargemap.compose.numberpicker.NumberPicker
+import com.seo4d696b75.compose.material3.picker.NumberPicker
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
@@ -148,6 +148,7 @@ internal fun FmDxApp(
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
     onToggleIms: () -> Unit,
+    onToggleStereoMode: () -> Unit,
     onCycleAntenna: () -> Unit,
     onScan: () -> Unit,
     formatSignal: (TunerState?, SignalUnit) -> String,
@@ -182,6 +183,7 @@ internal fun FmDxApp(
                 onTuneDirect = onTuneDirect,
                 onToggleEq = onToggleEq,
                 onToggleIms = onToggleIms,
+                onToggleStereoMode = onToggleStereoMode,
                 onCycleAntenna = onCycleAntenna,
                 onScan = onScan,
                 formatSignal = formatSignal,
@@ -212,6 +214,7 @@ private fun MainScreen(
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
     onToggleIms: () -> Unit,
+    onToggleStereoMode: () -> Unit,
     onCycleAntenna: () -> Unit,
     onScan: () -> Unit,
     formatSignal: (TunerState?, SignalUnit) -> String,
@@ -240,6 +243,7 @@ private fun MainScreen(
                     currentPty = currentPty,
                     onToggleEq = onToggleEq,
                     onToggleIms = onToggleIms,
+                    onToggleStereoMode = onToggleStereoMode,
                     onCycleAntenna = onCycleAntenna,
                     antennaLabel = antennaLabel
                 )
@@ -792,11 +796,7 @@ private fun FrequencyControlsCard(
     var decimalPickerPosition by rememberSaveable { mutableIntStateOf(0) }
 
     var isUserInteracting by remember { mutableStateOf(false) }
-    var userInteractionTick by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(userInteractionTick) {
-        if (!isUserInteracting) return@LaunchedEffect
-        delay(600)
+    LaunchedEffect(currentFreqKHz) {
         isUserInteracting = false
     }
 
@@ -866,7 +866,7 @@ private fun FrequencyControlsCard(
             }
     }
 
-    val decimalDisplayValues = remember(stepKHz) {
+    remember(stepKHz) {
         Array(max(1, decimalSteps)) { index ->
             String.format(Locale.ROOT, "%02d", (index * stepKHz) / 10)
         }
@@ -917,29 +917,41 @@ private fun FrequencyControlsCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val mhzDefault = selectedMHz.coerceIn(minMhz, maxMhz)
+            val mhzItems = remember(minMhz, maxMhz) {
+                (minMhz..maxMhz).toList().toPersistentList()
+            }
+            val mhzSelectedValue = selectedMHz.coerceIn(minMhz, maxMhz)
             Box(
                 modifier = Modifier
                     .width(pickerWidth)
                     .height(pickerHeight)
-                    .alpha(if (isControlReady) 1f else 0.4f)
+                    .alpha(if (isControlReady) 1f else 0.4f),
+                contentAlignment = Center
             ) {
-                key(minMhz, maxMhz, mhzDefault) {
-                    NumberPicker(
-                        modifier = Modifier.fillMaxSize(),
-                        label = { value -> value.toString() },
-                        value = mhzDefault,
-                        onValueChange = { value ->
-                            if (!isControlReady) return@NumberPicker
-                            selectedMHz = value.coerceIn(minMhz, maxMhz)
-                            isUserInteracting = true
-                            userInteractionTick++
-                        },
-                        dividersColor = Color.Transparent,
-                        range = minMhz..maxMhz,
-                        textStyle = pickerTextStyle
-                    )
-                }
+                NumberPicker(
+                    value = mhzSelectedValue,
+                    range = mhzItems,
+                    onValueChange = { newValue ->
+                        if (!isControlReady) return@NumberPicker
+                        val coerced = newValue.coerceIn(minMhz, maxMhz)
+                        if (selectedMHz != coerced) {
+                            selectedMHz = coerced
+                            val minForNew = minDecimalIndexFor(coerced)
+                            val maxForNew = maxDecimalIndexFor(coerced)
+                            val clampedDecimal = selectedDecimalIndex.coerceIn(minForNew, maxForNew)
+                            if (clampedDecimal != selectedDecimalIndex) {
+                                selectedDecimalIndex = clampedDecimal
+                                decimalPickerPosition =
+                                    alignPickerPositionToIndex(
+                                        decimalPickerPosition,
+                                        clampedDecimal
+                                    )
+                            }
+                        }
+                        isUserInteracting = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (!isControlReady) {
                     DisabledOverlay()
                 }
@@ -949,6 +961,18 @@ private fun FrequencyControlsCard(
                 style = pickerTextStyle,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
+            val decimalItems = remember(
+                selectedMHz,
+                minDecimalIndexForSelectedMhz,
+                maxDecimalIndexForSelectedMhz
+            ) {
+                (minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz).toList()
+                    .toPersistentList()
+            }
+            val decimalSelectedValue = selectedDecimalIndex.coerceIn(
+                minDecimalIndexForSelectedMhz,
+                maxDecimalIndexForSelectedMhz
+            )
             Box(
                 modifier = Modifier
                     .width(pickerWidth)
@@ -956,88 +980,72 @@ private fun FrequencyControlsCard(
                     .alpha(if (isControlReady) 1f else 0.4f),
                 contentAlignment = Center
             ) {
-                key(selectedMHz, decimalRange.first, decimalRange.last) {
-                    NumberPicker(
-                        modifier = Modifier.fillMaxSize(),
-                        label = { raw ->
-                            val wrapped = wrappedDecimalIndex(raw)
-                            decimalDisplayValues.getOrElse(wrapped) { "" }
-                        },
-                        value = decimalPickerPosition,
-                        onValueChange = { value ->
-                            if (!isControlReady) return@NumberPicker
-                            val previousPosition = decimalPickerPosition
-                            val previousDecimal = wrappedDecimalIndex(previousPosition)
-                            var nextPickerPosition = value
-                            var nextMHz = selectedMHz
-                            var nextDecimal = wrappedDecimalIndex(value)
+                NumberPicker(
+                    value = decimalSelectedValue,
+                    range = decimalItems,
+                    onValueChange = { newDecimal ->
+                        if (!isControlReady) return@NumberPicker
+                        val value = newDecimal.coerceIn(decimalRange.first, decimalRange.last)
+                        val previousPosition = decimalPickerPosition
+                        val previousDecimal = wrappedDecimalIndex(previousPosition)
+                        var nextPickerPosition = alignPickerPositionToIndex(previousPosition, value)
+                        var nextMHz = selectedMHz
+                        var nextDecimal = value
 
-                            if (decimalSteps > 1) {
-                                val minForCurrent = minDecimalIndexFor(nextMHz)
-                                val maxForCurrent = maxDecimalIndexFor(nextMHz)
-                                val direction = value - previousPosition
-                                val wrapsForward =
-                                    direction > 0 &&
-                                            previousDecimal == maxForCurrent &&
-                                            nextMHz < maxMhz
-                                val wrapsBackward =
-                                    direction < 0 &&
-                                            previousDecimal == minForCurrent &&
-                                            nextMHz > minMhz
+                        if (decimalSteps > 1) {
+                            val minForCurrent = minDecimalIndexFor(nextMHz)
+                            val maxForCurrent = maxDecimalIndexFor(nextMHz)
+                            val direction = value - previousDecimal
+                            val wrapsForward =
+                                direction > 0 && previousDecimal == maxForCurrent && nextMHz < maxMhz
+                            val wrapsBackward =
+                                direction < 0 && previousDecimal == minForCurrent && nextMHz > minMhz
 
-                                when {
-                                    wrapsForward -> {
-                                        val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
-                                        nextMHz = candidateMHz
-                                        val candidateMin = minDecimalIndexFor(candidateMHz)
-                                        nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
-                                        nextPickerPosition =
-                                            alignPickerPositionToIndex(value, nextDecimal)
-                                    }
-
-                                    wrapsBackward -> {
-                                        val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
-                                        nextMHz = candidateMHz
-                                        val candidateMax = maxDecimalIndexFor(candidateMHz)
-                                        nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
-                                        nextPickerPosition =
-                                            alignPickerPositionToIndex(value, nextDecimal)
-                                    }
-
-                                    else -> {
-                                        val clampedDecimal =
-                                            nextDecimal.coerceIn(minForCurrent, maxForCurrent)
-                                        if (clampedDecimal != nextDecimal) {
-                                            nextDecimal = clampedDecimal
-                                            nextPickerPosition =
-                                                alignPickerPositionToIndex(value, nextDecimal)
-                                        }
-                                    }
+                            when {
+                                wrapsForward -> {
+                                    val candidateMHz = (nextMHz + 1).coerceAtMost(maxMhz)
+                                    nextMHz = candidateMHz
+                                    val candidateMin = minDecimalIndexFor(candidateMHz)
+                                    nextDecimal = candidateMin.coerceIn(0, decimalSteps - 1)
+                                    nextPickerPosition =
+                                        alignPickerPositionToIndex(value, nextDecimal)
                                 }
-                            } else {
-                                nextDecimal = 0
-                                nextPickerPosition = decimalRange.first
-                            }
 
-                            val coercedPicker =
-                                nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
-                            if (coercedPicker != decimalPickerPosition) {
-                                decimalPickerPosition = coercedPicker
+                                wrapsBackward -> {
+                                    val candidateMHz = (nextMHz - 1).coerceAtLeast(minMhz)
+                                    nextMHz = candidateMHz
+                                    val candidateMax = maxDecimalIndexFor(candidateMHz)
+                                    nextDecimal = candidateMax.coerceIn(0, decimalSteps - 1)
+                                    nextPickerPosition =
+                                        alignPickerPositionToIndex(value, nextDecimal)
+                                }
+
+                                else -> {
+                                    nextDecimal = nextDecimal.coerceIn(minForCurrent, maxForCurrent)
+                                    nextPickerPosition =
+                                        alignPickerPositionToIndex(value, nextDecimal)
+                                }
                             }
-                            if (nextMHz != selectedMHz) {
-                                selectedMHz = nextMHz
-                            }
-                            if (nextDecimal != selectedDecimalIndex) {
-                                selectedDecimalIndex = nextDecimal
-                            }
-                            isUserInteracting = true
-                            userInteractionTick++
-                        },
-                        dividersColor = Color.Transparent,
-                        range = decimalRange,
-                        textStyle = pickerTextStyle
-                    )
-                }
+                        } else {
+                            nextDecimal = 0
+                            nextPickerPosition = decimalRange.first
+                        }
+
+                        val coercedPicker =
+                            nextPickerPosition.coerceIn(decimalRange.first, decimalRange.last)
+                        if (coercedPicker != decimalPickerPosition) {
+                            decimalPickerPosition = coercedPicker
+                        }
+                        if (nextMHz != selectedMHz) {
+                            selectedMHz = nextMHz
+                        }
+                        if (nextDecimal != selectedDecimalIndex) {
+                            selectedDecimalIndex = nextDecimal
+                        }
+                        isUserInteracting = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (!isControlReady) {
                     DisabledOverlay()
                 }
@@ -1068,6 +1076,7 @@ private fun TunerSection(
     currentPty: (TunerState?) -> String,
     onToggleEq: () -> Unit,
     onToggleIms: () -> Unit,
+    onToggleStereoMode: () -> Unit,
     onCycleAntenna: () -> Unit,
     antennaLabel: () -> String
 ) {
@@ -1124,6 +1133,7 @@ private fun TunerSection(
                     state = state,
                     onToggleEq = onToggleEq,
                     onToggleIms = onToggleIms,
+                    onToggleStereoMode = onToggleStereoMode,
                     onCycleAntenna = onCycleAntenna
                 )
             }
@@ -1281,11 +1291,13 @@ private fun ControlButtons(
     state: UiState,
     onToggleEq: () -> Unit,
     onToggleIms: () -> Unit,
+    onToggleStereoMode: () -> Unit,
     onCycleAntenna: () -> Unit
 ) {
     val canSwitchAntenna = state.tunerInfo?.canSwitchAntenna() == true
     val imsActive = state.tunerState?.ims == true
     val eqActive = state.tunerState?.eq == true
+    val isStereoForced = state.tunerState?.stereoForced == true
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1309,12 +1321,30 @@ private fun ControlButtons(
                 modifier = Modifier.weight(1f)
             )
         }
-        Button(
-            onClick = onCycleAntenna,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.isConnected && canSwitchAntenna
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(text = stringResource(id = R.string.antenna_switch))
+            ControlToggleButton(
+                text = stringResource(
+                    id = if (isStereoForced) {
+                        R.string.rds_audio_mode_mono
+                    } else {
+                        R.string.rds_audio_mode_stereo
+                    }
+                ),
+                pressed = isStereoForced,
+                onClick = onToggleStereoMode,
+                enabled = state.isConnected,
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = onCycleAntenna,
+                modifier = Modifier.weight(1f),
+                enabled = state.isConnected && canSwitchAntenna
+            ) {
+                Text(text = stringResource(id = R.string.antenna_switch))
+            }
         }
     }
 }
@@ -1383,15 +1413,70 @@ private fun RdsPsPiContent(tuner: TunerState?) {
         RdsLabelText(text = stringResource(id = R.string.rds_ps_label))
         Spacer(modifier = Modifier.width(8.dp))
         Box(modifier = Modifier.weight(1f)) {
-            AnnotatedErrorText(
-                tuner?.ps ?: stringResource(id = R.string.default_value),
-                tuner?.psErrors ?: emptyList()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AnnotatedErrorText(
+                    tuner?.ps ?: stringResource(id = R.string.default_value),
+                    tuner?.psErrors ?: emptyList(),
+                    modifier = Modifier.weight(1f)
+                )
+                if (tuner != null) {
+                    RdsAudioModeIndicator(
+                        isStereo = tuner.stereo,
+                        isForcedMono = tuner.stereoForced
+                    )
+                }
+            }
         }
         Spacer(modifier = Modifier.width(16.dp))
         RdsLabelText(text = stringResource(id = R.string.rds_pi_label, ""))
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = displayPiValue)
+    }
+}
+
+@Composable
+private fun RdsAudioModeIndicator(
+    isStereo: Boolean,
+    isForcedMono: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val effectiveStereo = if (isForcedMono) false else isStereo
+    val label = stringResource(
+        id = if (effectiveStereo) {
+            R.string.rds_audio_mode_chip_label_stereo
+        } else {
+            R.string.rds_audio_mode_chip_label_mono
+        }
+    )
+    val modeDescription = stringResource(
+        id = if (effectiveStereo) {
+            R.string.rds_audio_mode_stereo
+        } else {
+            R.string.rds_audio_mode_mono
+        }
+    )
+    val contentDescription = stringResource(
+        id = R.string.rds_audio_mode_content_description,
+        modeDescription
+    )
+    Surface(
+        modifier = modifier.semantics {
+            this.contentDescription = contentDescription
+        },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        tonalElevation = 1.dp
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
     }
 }
 
@@ -2059,6 +2144,7 @@ private fun MainScreenPreview() {
                 onTuneDirect = {},
                 onToggleEq = {},
                 onToggleIms = {},
+                onToggleStereoMode = {},
                 onCycleAntenna = {},
                 onScan = {},
                 formatSignal = { tuner, _ ->
@@ -2144,6 +2230,7 @@ private fun previewTunerState(): TunerState {
         stepKHz = 100,
         signalDbf = -48.0,
         stereo = true,
+        stereoForced = false,
         ims = false,
         eq = false,
         antennaIndex = 1,
@@ -2240,6 +2327,7 @@ private fun TunerSectionPreview() {
                 currentPty = { "10/Pop Music" },
                 onToggleEq = {},
                 onToggleIms = {},
+                onToggleStereoMode = {},
                 onCycleAntenna = {},
                 antennaLabel = { state.previewAntennaLabel() }
             )

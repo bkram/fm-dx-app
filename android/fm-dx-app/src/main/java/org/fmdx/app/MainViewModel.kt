@@ -283,6 +283,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendCommand("G${eq}${ims}")
     }
 
+    fun toggleStereoMode() {
+        val currentState = _uiState.value
+        val tunerState = currentState.tunerState ?: return
+        val isCurrentlyForced = tunerState.stereoForced
+        val command =
+            if (isCurrentlyForced) "B0" else "B1" // B0 -> release to stereo, B1 -> force mono.
+        sendCommand(command)
+    }
+
     fun cycleAntenna() {
         val state = _uiState.value.tunerState ?: return
         val antennas = _uiState.value.antennas.takeIf { it.isNotEmpty() } ?: listOf("Default")
