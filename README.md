@@ -15,7 +15,8 @@ custom security provider.
 
 ## Prerequisites
 
-This app talks to an FM-DX Webserver. To see the full UI (logos and spectrum graph) make sure the
+This app talks to an [FM-DX Webserver](https://github.com/NoobishSVK/fm-dx-webserver). To see the
+full UI (logos and spectrum graph) make sure the
 remote server has the following plugins installed and enabled:
 
 - [Spectrum Graph plugin](https://github.com/AmateurAudioDude/FM-DX-Webserver-Plugin-Spectrum-Graph)
@@ -48,12 +49,12 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
    ```
 2. Assemble the debug APK:
    ```bash
-   ./gradlew assembleDebug
+   ./gradlew :fm-dx-app:assembleDebug
    ```
-   The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+   The APK is written to `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`.
 3. (Optional) Install to a connected device or emulator:
    ```bash
-   ./gradlew installDebug
+   ./gradlew :fm-dx-app:installDebug
    adb shell am start -n org.fmdx.app/.MainActivity
    ```
 4. Stop Gradle daemons if cache/daemon errors occur:
@@ -63,13 +64,15 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
 
 ## Android Studio
 1. Open Android Studio and choose **File → Open…**.
-2. Select the repository root (`fm-dx-app`). Studio detects the single `app` module located at
-   `android/app`.
+2. Select the repository root (`fm-dx-app`). Studio detects the `fm-dx-app` module located at
+   `android/fm-dx-app`.
 3. Let Gradle sync against the API 36.1 SDK.
 4. Choose a device running Android 10+ and press **Run**.
 
 ## Configuration
-- On first launch, enter the `fm-dx-webserver` base URL (e.g. `https://radio-host:8080/`). The app
+
+- On first launch, enter the [`fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver) base
+  URL (e.g. `https://radio-host:8080/`). The app
   normalises the URL and establishes both control and plugin WebSocket connections.
 - Audio playback falls back to the WebSocket MP3 stream (`{"type":"fallback","data":"mp3"}`) exposed
   by the server.
@@ -92,7 +95,7 @@ script installs JDK 21, the Android command-line tools, the API 36.1 SDK compone
 
 ```bash
 ./gradlew --version
-./gradlew assembleDebug
+./gradlew :fm-dx-app:assembleDebug
 ```
 
 Persist the SDK directory between runs to avoid repeated downloads.

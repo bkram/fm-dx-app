@@ -536,7 +536,7 @@ private fun AboutScreen(onBack: () -> Unit) {
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { uriHandler.openUri(githubUrl) }
+                            .clickable { uriHandler.openUri(fmdxWebServerUrl) }
                     )
                     HorizontalDivider()
                     ListItem(
