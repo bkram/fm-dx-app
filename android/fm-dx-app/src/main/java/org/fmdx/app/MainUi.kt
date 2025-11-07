@@ -1041,40 +1041,43 @@ private fun TunerSection(
             }
         }
         Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                SignalStrengthInfo(
+                    tunerState = tunerState,
+                    signalUnit = state.signalUnit,
+                    formatSignal = formatSignal,
+                    modifier = Modifier.weight(1f)
+                )
+                val antennaPrefix = stringResource(id = R.string.antenna_current, "").trim()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.wrapContentWidth(Alignment.End)
+                ) {
+                    Text(
+                        text = antennaPrefix,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = antennaLabel(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    SignalStrengthInfo(
-                        tunerState = tunerState,
-                        signalUnit = state.signalUnit,
-                        formatSignal = formatSignal,
-                        modifier = Modifier
-                            .weight(1f)
-                    )
-                    val antennaPrefix = stringResource(id = R.string.antenna_current, "").trim()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.wrapContentWidth(Alignment.End)
-                    ) {
-                        Text(
-                            text = antennaPrefix,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = antennaLabel(),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
                 FrequencyControlsCard(
                     state = state,
                     onTuneDirect = onTuneDirect
@@ -1698,7 +1701,6 @@ private fun RdsFlagsRow(tuner: TunerState?) {
             )
         )
     }
-    RdsLabelText(text = stringResource(id = R.string.rds_flags_heading))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),

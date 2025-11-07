@@ -103,7 +103,6 @@
     <string name="about_site_link">Bezoek fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
-    <string name="rds_flags_heading">RDS-vlaggen</string>
     <string name="rds_flag_tp_full">Verkeersprogramma (TP)</string>
     <string name="rds_flag_ta_full">Verkeersbericht (TA)</string>
     <string name="rds_flag_ms_music_full">Muziekprogramma</string>
