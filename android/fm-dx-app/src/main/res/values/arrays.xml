@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="pty_programmes_europe">
+        <item>@string/pty_programme_0</item>
+        <item>@string/pty_programme_1</item>
+        <item>@string/pty_programme_2</item>
+        <item>@string/pty_programme_3</item>
+        <item>@string/pty_programme_4</item>
+        <item>@string/pty_programme_5</item>
+        <item>@string/pty_programme_6</item>
+        <item>@string/pty_programme_7</item>
+        <item>@string/pty_programme_8</item>
+        <item>@string/pty_programme_9</item>
+        <item>@string/pty_programme_10</item>
+        <item>@string/pty_programme_11</item>
+        <item>@string/pty_programme_12</item>
+        <item>@string/pty_programme_13</item>
+        <item>@string/pty_programme_14</item>
+        <item>@string/pty_programme_15</item>
+        <item>@string/pty_programme_16</item>
+        <item>@string/pty_programme_17</item>
+        <item>@string/pty_programme_18</item>
+        <item>@string/pty_programme_19</item>
+        <item>@string/pty_programme_20</item>
+        <item>@string/pty_programme_21</item>
+        <item>@string/pty_programme_22</item>
+        <item>@string/pty_programme_23</item>
+        <item>@string/pty_programme_24</item>
+        <item>@string/pty_programme_25</item>
+        <item>@string/pty_programme_26</item>
+        <item>@string/pty_programme_27</item>
+        <item>@string/pty_programme_28</item>
+        <item>@string/pty_programme_29</item>
+        <item>@string/pty_programme_30</item>
+    </string-array>
+</resources>

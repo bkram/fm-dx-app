@@ -20,13 +20,25 @@ jobs:
           cache: gradle
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      - name: Capture version info
+        run: |
+          info=$(./gradlew -q :fm-dx-app:printVersion)
+          echo "$info"
+          VERSION_NAME=$(echo "$info" | awk -F= '/VERSION_NAME/ {print $2}')
+          VERSION_CODE=$(echo "$info" | awk -F= '/VERSION_CODE/ {print $2}')
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
       - name: Build debug APK
         run: ./gradlew :fm-dx-app:assembleDebug
+      - name: Rename debug APK with version
+        run: |
+          mv android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk \
+             android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug-${VERSION_NAME}-${VERSION_CODE}.apk
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: fm-dx-app-debug.zip
-          path: android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk
+          name: fm-dx-app-debug-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
+          path: android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}.apk
           retention-days: 30
 
   build_release:
@@ -42,11 +54,23 @@ jobs:
           cache: gradle
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      - name: Capture version info
+        run: |
+          info=$(./gradlew -q :fm-dx-app:printVersion)
+          echo "$info"
+          VERSION_NAME=$(echo "$info" | awk -F= '/VERSION_NAME/ {print $2}')
+          VERSION_CODE=$(echo "$info" | awk -F= '/VERSION_CODE/ {print $2}')
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
       - name: Build release APK
         run: ./gradlew :fm-dx-app:assembleRelease
+      - name: Rename release APK with version
+        run: |
+          mv android/fm-dx-app/build/outputs/apk/release/fm-dx-app-release.apk \
+             android/fm-dx-app/build/outputs/apk/release/fm-dx-app-release-${VERSION_NAME}-${VERSION_CODE}.apk
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: fm-dx-app-release.zip
-          path: android/fm-dx-app/build/outputs/apk/release/fm-dx-app-release.apk
+          name: fm-dx-app-release-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
+          path: android/fm-dx-app/build/outputs/apk/release/fm-dx-app-release-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}.apk
           retention-days: 30

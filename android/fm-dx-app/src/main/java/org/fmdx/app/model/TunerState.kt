@@ -11,6 +11,7 @@ data class TunerState(
     val stepKHz: Int?,
     val signalDbf: Double?,
     val stereo: Boolean,
+    val stereoForced: Boolean,
     val ims: Boolean,
     val eq: Boolean,
     val antennaIndex: Int?,
@@ -39,18 +40,9 @@ data class TunerState(
     val freqKHz: Int?
         get() = freqMHz?.let { (it * 1000).roundToInt() }
 
-    fun flags(): String {
-        val parts = buildList {
-            if (tp) add("TP")
-            if (ta) add("TA")
-            if (ms) add("MS")
-        }
-        return parts.joinToString(" ")
-    }
-
-    fun ptyDisplay(europeProgrammes: List<String>): String {
+    fun ptyDisplay(europeProgrammes: List<String>, unknownLabel: String): String {
         val number = pty ?: 0
-        val name = europeProgrammes.getOrNull(number) ?: "None"
+        val name = europeProgrammes.getOrNull(number) ?: unknownLabel
         return "$number/$name"
     }
 
@@ -103,6 +95,7 @@ data class TunerState(
                 stepKHz = stepKHz,
                 signalDbf = sig,
                 stereo = obj.optBooleanFromInt("st"),
+                stereoForced = obj.optBooleanFromInt("stForced"),
                 ims = obj.optBooleanFromInt("ims"),
                 eq = obj.optBooleanFromInt("eq"),
                 antennaIndex = obj.optIntOrNull("ant"),
@@ -166,8 +159,7 @@ private fun JSONObject.optIntOrNull(name: String): Int? =
 
 private fun JSONObject.optBooleanOrNull(name: String): Boolean? =
     if (has(name) && !isNull(name)) {
-        val value = opt(name)
-        when (value) {
+        when (val value = opt(name)) {
             is Boolean -> value
             is Number -> value.toInt() != 0
             else -> null
@@ -188,8 +180,7 @@ private fun JSONArray?.toDoubleList(): List<Double> {
     if (this == null) return emptyList()
     val result = mutableListOf<Double>()
     for (i in 0 until length()) {
-        val value = opt(i)
-        when (value) {
+        when (val value = opt(i)) {
             is Number -> result.add(value.toDouble())
             is String -> value.toDoubleOrNull()?.let(result::add)
         }
