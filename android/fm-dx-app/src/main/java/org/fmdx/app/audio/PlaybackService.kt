@@ -60,8 +60,8 @@ class PlaybackService : MediaSessionService() {
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
 
         val initialProfile = manualProfile(
-            preferences.getInt(KEY_NETWORK_BUFFER, 2),
-            preferences.getInt(KEY_PLAYER_BUFFER, 2000)
+            preferences.getInt(KEY_NETWORK_BUFFER, DEFAULT_NETWORK_BUFFER_CHUNKS),
+            preferences.getInt(KEY_PLAYER_BUFFER, DEFAULT_PLAYER_BUFFER_MS)
         )
 
         val player = buildPlayer(initialProfile)
@@ -98,8 +98,8 @@ class PlaybackService : MediaSessionService() {
     private suspend fun applyLatestSettings() {
         reconfigMutex.withLock {
             val manualProfile = manualProfile(
-                preferences.getInt(KEY_NETWORK_BUFFER, 2),
-                preferences.getInt(KEY_PLAYER_BUFFER, 2000)
+                preferences.getInt(KEY_NETWORK_BUFFER, DEFAULT_NETWORK_BUFFER_CHUNKS),
+                preferences.getInt(KEY_PLAYER_BUFFER, DEFAULT_PLAYER_BUFFER_MS)
             )
             if (currentProfile != manualProfile) {
                 recreatePlayerWithProfile(manualProfile)
@@ -152,8 +152,11 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun manualProfile(networkChunks: Int, playerBufferMs: Int): BufferProfile {
-        val safeChunks = networkChunks.coerceIn(1, MAX_NETWORK_BUFFER_CHUNKS)
-        val base = playerBufferMs.coerceAtLeast(MIN_PLAYER_BUFFER_MS)
+        val safeChunks = networkChunks.coerceIn(
+            DEFAULT_NETWORK_BUFFER_CHUNKS,
+            MAX_NETWORK_BUFFER_CHUNKS
+        )
+        val base = playerBufferMs.coerceAtLeast(DEFAULT_PLAYER_BUFFER_MS)
         val minBuffer = base
         val maxBuffer = (base * 2).coerceAtLeast(minBuffer + 300)
         val playback = (base / 2).coerceAtLeast(250)
