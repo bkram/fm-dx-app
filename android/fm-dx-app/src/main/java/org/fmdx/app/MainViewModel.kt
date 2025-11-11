@@ -274,17 +274,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleIms() {
-        val state = _uiState.value.tunerState ?: return
-        val eq = if (state.eq) 1 else 0
-        val ims = if (state.ims) 0 else 1
-        sendCommand("G${eq}${ims}")
+        val tunerState = _uiState.value.tunerState ?: return
+        val newImsEnabled = !tunerState.ims
+        val eqBit = if (tunerState.eq) 1 else 0
+        val imsBit = if (newImsEnabled) 1 else 0
+        sendCommand("G${eqBit}${imsBit}")
+        _uiState.update { current ->
+            val currentTunerState = current.tunerState ?: return@update current
+            current.copy(tunerState = currentTunerState.copy(ims = newImsEnabled))
+        }
     }
 
     fun toggleEq() {
-        val state = _uiState.value.tunerState ?: return
-        val eq = if (state.eq) 0 else 1
-        val ims = if (state.ims) 1 else 0
-        sendCommand("G${eq}${ims}")
+        val tunerState = _uiState.value.tunerState ?: return
+        val newEqEnabled = !tunerState.eq
+        val eqBit = if (newEqEnabled) 1 else 0
+        val imsBit = if (tunerState.ims) 1 else 0
+        sendCommand("G${eqBit}${imsBit}")
+        _uiState.update { current ->
+            val currentTunerState = current.tunerState ?: return@update current
+            current.copy(tunerState = currentTunerState.copy(eq = newEqEnabled))
+        }
     }
 
     fun toggleStereoMode() {

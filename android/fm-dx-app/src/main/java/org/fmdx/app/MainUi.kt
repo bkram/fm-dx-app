@@ -155,20 +155,22 @@ internal fun FmDxApp(
     antennaLabel: () -> String,
     onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
 ) {
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showAbout by rememberSaveable { mutableStateOf(false) }
+    val showSettingsState = rememberSaveable { mutableStateOf(false) }
+    val showAboutState = rememberSaveable { mutableStateOf(false) }
+    val showSettings by showSettingsState
+    val showAbout by showAboutState
 
     when {
         showSettings -> {
             SettingsScreen(
                 state = state,
                 onUpdateSettings = onUpdateSettings,
-                onBack = { }
+                onBack = { showSettingsState.value = false }
             )
         }
 
         showAbout -> {
-            AboutScreen(onBack = { })
+            AboutScreen(onBack = { showAboutState.value = false })
         }
 
         else -> {
@@ -188,10 +190,8 @@ internal fun FmDxApp(
                 formatSignal = formatSignal,
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
-                onShowSettings = {
-                },
-                onShowAbout = {
-                }
+                onShowSettings = { showSettingsState.value = true },
+                onShowAbout = { showAboutState.value = true }
             )
         }
     }
@@ -1267,16 +1267,16 @@ private fun ControlButtons(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ControlToggleButton(
-                text = stringResource(id = if (imsActive) R.string.ims_on else R.string.ims_off),
-                pressed = imsActive,
-                onClick = onToggleIms,
+                text = stringResource(id = R.string.control_label_ceq),
+                pressed = eqActive,
+                onClick = onToggleEq,
                 enabled = state.isConnected,
                 modifier = Modifier.weight(1f)
             )
             ControlToggleButton(
-                text = stringResource(id = if (eqActive) R.string.eq_on else R.string.eq_off),
-                pressed = eqActive,
-                onClick = onToggleEq,
+                text = stringResource(id = R.string.control_label_ims),
+                pressed = imsActive,
+                onClick = onToggleIms,
                 enabled = state.isConnected,
                 modifier = Modifier.weight(1f)
             )

@@ -14,10 +14,8 @@
     <string name="spectrum_zoom">Zoom</string>
     <string name="station_logo_content_description">Station logo</string>
     <string name="signal_unit">Signal unit</string>
-    <string name="ims_on">iMS On</string>
-    <string name="ims_off">iMS Off</string>
-    <string name="eq_on">EQ On</string>
-    <string name="eq_off">EQ Off</string>
+    <string name="control_label_ceq" translatable="false">cEQ</string>
+    <string name="control_label_ims" translatable="false">iMS</string>
     <string name="connected">Connected</string>
     <string name="disconnected">Disconnected</string>
     <string name="connecting">Connecting</string>

@@ -15,10 +15,6 @@
     <string name="spectrum_zoom">Zoom</string>
     <string name="station_logo_content_description">Stationlogo</string>
     <string name="signal_unit">Signaaleenheid</string>
-    <string name="ims_on">iMS aan</string>
-    <string name="ims_off">iMS uit</string>
-    <string name="eq_on">EQ aan</string>
-    <string name="eq_off">EQ uit</string>
     <string name="connected">Verbonden</string>
     <string name="disconnected">Verbinding verbroken</string>
     <string name="connecting">Verbinding maken</string>
