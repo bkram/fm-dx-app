@@ -114,11 +114,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import com.seo4d696b75.compose.material3.picker.NumberPicker
+import com.seo4d696b75.compose.material3.picker.Picker
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -871,6 +873,16 @@ private fun FrequencyControlsCard(
     val maxDecimalIndexForSelectedMhz = maxDecimalIndexFor(selectedMHz)
 
     val isControlReady = state.isConnected
+    val decimalPickerItems = remember(decimalRangeSize, decimalSteps, stepKHz) {
+        decimalRange.map { position ->
+            val wrapped = wrappedDecimalIndex(position)
+            val displayValue = decimalDisplayValues.getOrElse(wrapped) { wrapped }
+            val displayText = displayValue.toString().padStart(2, '0')
+            DecimalPickerLabel(position, displayValue, displayText)
+        }.toPersistentList()
+    }
+    val decimalPickerIndex = (decimalPickerPosition - decimalRange.first)
+        .coerceIn(0, decimalPickerItems.lastIndex.coerceAtLeast(0))
 
     LaunchedEffect(minMhz, maxMhz) {
         val clampedMhz = selectedMHz.coerceIn(minMhz, maxMhz)
@@ -895,6 +907,39 @@ private fun FrequencyControlsCard(
         if (!isUserInteracting) {
             decimalPickerPosition = anchorPositionFor(clampedIndex)
         }
+    }
+
+    fun handleDecimalPickerChange(newPosition: Int) {
+        val boundedPosition = newPosition
+            .coerceIn(decimalRange.first, decimalRange.last)
+            .coerceAtMost(decimalPickerItems.lastIndex.coerceAtLeast(0))
+        val previousPosition = decimalPickerPosition
+        if (boundedPosition == previousPosition) return
+        decimalPickerPosition = boundedPosition
+        if (!isControlReady || decimalSteps <= 1) {
+            isUserInteracting = true
+            return
+        }
+        val deltaSteps = boundedPosition - previousPosition
+        val currentKHz = (selectedMHz * 1000) + (selectedDecimalIndex * stepKHz)
+        val targetKHz = (currentKHz + deltaSteps * stepKHz).coerceIn(minKHz, maxKHz)
+        val nextMhz = (targetKHz / 1000).coerceIn(minMhz, maxMhz)
+        val rawDecimalIndex = ((targetKHz % 1000) / stepKHz)
+        val nextDecimal = rawDecimalIndex.coerceIn(
+            minDecimalIndexFor(nextMhz),
+            maxDecimalIndexFor(nextMhz)
+        )
+        if (nextMhz != selectedMHz) {
+            selectedMHz = nextMhz
+        }
+        if (nextDecimal != selectedDecimalIndex) {
+            selectedDecimalIndex = nextDecimal
+        }
+        val anchored = alignPickerPositionToIndex(boundedPosition, nextDecimal)
+        if (anchored != decimalPickerPosition) {
+            decimalPickerPosition = anchored
+        }
+        isUserInteracting = true
     }
 
     Column(
@@ -945,7 +990,11 @@ private fun FrequencyControlsCard(
                         }
                         isUserInteracting = true
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isControlReady,
+                    labelStyle = pickerTextStyle,
+                    labelSize = DpSize(pickerWidth, pickerHeight / 3),
+                    dividerHeight = 2.dp
                 )
                 if (!isControlReady) {
                     DisabledOverlay()
@@ -956,21 +1005,6 @@ private fun FrequencyControlsCard(
                 style = pickerTextStyle,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
-            val decimalDisplayItems = remember(
-                selectedMHz,
-                minDecimalIndexForSelectedMhz,
-                maxDecimalIndexForSelectedMhz
-            ) {
-                (minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz).map { index ->
-                    decimalDisplayValues.getOrElse(index) { index }
-                }.toPersistentList()
-            }
-            val decimalSelectedDisplayValue = decimalDisplayValues.getOrElse(
-                selectedDecimalIndex.coerceIn(
-                    minDecimalIndexForSelectedMhz,
-                    maxDecimalIndexForSelectedMhz
-                )
-            ) { 0 }
             Box(
                 modifier = Modifier
                     .width(pickerWidth)
@@ -978,21 +1012,18 @@ private fun FrequencyControlsCard(
                     .alpha(if (isControlReady) 1f else 0.4f),
                 contentAlignment = Center
             ) {
-                NumberPicker(
-                    value = decimalSelectedDisplayValue,
-                    range = decimalDisplayItems,
-                    onValueChange = { newDisplayValue ->
-                        if (!isControlReady) return@NumberPicker
-                        val normalizedIndex = ((newDisplayValue * 10) / stepKHz).coerceIn(
-                            minDecimalIndexForSelectedMhz,
-                            maxDecimalIndexForSelectedMhz
-                        )
-                        if (selectedDecimalIndex != normalizedIndex) {
-                            selectedDecimalIndex = normalizedIndex
-                        }
-                        isUserInteracting = true
+                Picker(
+                    index = decimalPickerIndex,
+                    values = decimalPickerItems,
+                    onIndexChange = { newIndex ->
+                        val item = decimalPickerItems.getOrNull(newIndex) ?: return@Picker
+                        handleDecimalPickerChange(item.position)
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isControlReady,
+                    labelStyle = pickerTextStyle,
+                    labelSize = DpSize(pickerWidth, pickerHeight / 3),
+                    dividerHeight = 2.dp
                 )
                 if (!isControlReady) {
                     DisabledOverlay()
@@ -1014,6 +1045,14 @@ private fun DisabledOverlay() {
                 onClick = {}
             )
     )
+}
+
+private data class DecimalPickerLabel(
+    val position: Int,
+    val displayValue: Int,
+    val text: String
+) {
+    override fun toString(): String = text
 }
 
 @Composable

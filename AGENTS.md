@@ -20,6 +20,11 @@
   files) so previews and UI-only changes never leak into the state layer.
 - Preserve existing card grouping within each section; don't introduce new swipe carousels or
   restructure detail panes unless a ticket requests it.
+- The tuner’s frequency picker uses `NumberPicker` for the MHz column and the generic `Picker`
+  for the decimal column (both from `compose-material3-picker`). Keep their typography/sizing in
+  sync (headlineMedium, equal label heights) and preserve the current looping decimal behavior
+  where spinning past `.9` increments MHz and spinning below `.0` decrements it. Any tweaks to
+  tuning controls belong in `FrequencyControlsCard` inside `MainUi.kt`.
 
 ## Build & Install Checklist
 These steps assume you are in the repository root.
