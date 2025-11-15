@@ -102,10 +102,8 @@
     </plurals>
     <string name="none">None</string>
     <string name="rds_af_label" translatable="false">AF: %1$s</string>
-    <string name="radiotext_label">RadioText:</string>
     <string name="station_name_label">Name: %1$s</string>
     <string name="station_location_label">Location: %1$s</string>
-    <string name="station_country_label">Country: %1$s</string>
     <string name="station_distance_label">Distance: %1$s</string>
     <string name="station_power_label">Power: %1$s</string>
     <string name="station_polarization_label">Polarization: %1$s</string>

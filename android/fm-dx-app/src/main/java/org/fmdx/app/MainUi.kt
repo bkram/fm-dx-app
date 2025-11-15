@@ -1500,7 +1500,6 @@ private fun buildRadiotextDisplay(line: String?, errors: List<Int>): Pair<String
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
-    RdsLabelText(text = stringResource(id = R.string.radiotext_label))
     val baseStyle = MaterialTheme.typography.bodyMedium
     val radiotextStyle = baseStyle.copy(
         fontSize = baseStyle.fontSize * 0.8f,

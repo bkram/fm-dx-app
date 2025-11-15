@@ -82,10 +82,8 @@
     <string name="pty_programme_28">Folkmuziek</string>
     <string name="pty_programme_29">Documentaire</string>
     <string name="pty_programme_30">Alarmtest</string>
-    <string name="radiotext_label">Radiotekst:</string>
     <string name="station_name_label">Naam: %1$s</string>
     <string name="station_location_label">Locatie: %1$s</string>
-    <string name="station_country_label">Land: %1$s</string>
     <string name="station_distance_label">Afstand: %1$s</string>
     <string name="station_power_label">Vermogen: %1$s</string>
     <string name="station_polarization_label">Polarisatie: %1$s</string>

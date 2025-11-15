@@ -204,14 +204,15 @@ class FmDxRepository(
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                val body = response.body?.string() ?: return null
+                val body = response.body.string()
+                if (body.isBlank()) return null
                 val document = Jsoup.parse(body)
                 val folderElement = document.select(".folder").firstOrNull { element ->
                     element.text().trim().endsWith("./$countryCode")
                 } ?: return null
                 val fileContainer = folderElement.nextElementSibling() ?: return null
                 val available = fileContainer.select(".file a")
-                    .mapNotNull { it.text()?.trim() }
+                    .mapNotNull { it.text().trim().takeIf { text -> text.isNotEmpty() } }
                     .toSet()
                 val priority = buildList {
                     if (sanitizedProgram != null) {
@@ -267,8 +268,8 @@ class FmDxRepository(
                         .build()
                 ).execute().use { response ->
                     if (response.isSuccessful) {
-                        val body = response.body?.string()
-                        if (!body.isNullOrBlank()) {
+                        val body = response.body.string()
+                        if (body.isNotBlank()) {
                             val json = JSONObject(body)
                             tunerName = json.optString("tunerName", tunerName)
                             tunerDesc = json.optString("tunerDesc", tunerDesc)
@@ -364,7 +365,8 @@ class FmDxRepository(
                     logDebug("fetchSpectrumData(): request failed code=${response.code}")
                     return@use null
                 }
-                val body = response.body?.string() ?: return@use null
+                val body = response.body.string()
+                if (body.isBlank()) return@use null
                 val json = JSONObject(body)
                 parseSpectrumDataset(json)
             }
@@ -377,9 +379,12 @@ class FmDxRepository(
         onError: (Throwable) -> Unit
     ) {
         logDebug("$socketName socket: failure code=${response?.code}", t)
+        if (t is EOFException) {
+            logDebug("$socketName socket: server closed connection; suppressing popup")
+            return
+        }
         val message = when (t) {
             is SocketException -> "Connection to server lost"
-            is EOFException -> "Connection closed by server"
             else -> t.message ?: "Unknown connection error"
         }
         onError(IOException(message, t))
