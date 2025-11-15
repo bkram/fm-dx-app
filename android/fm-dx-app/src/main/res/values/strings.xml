@@ -124,5 +124,16 @@
     <string name="about_version">Version %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">GitHub: FM-DX Webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
+    <string name="help_tab_title">Help</string>
+    <string name="help_getting_started_title">Getting started</string>
+    <string name="help_getting_started_description">Enter your FM-DX WebServer URL on the Connection tab, tap Connect, and wait for the status to show Connected. Save frequently used URLs in the Recent list for quicker access.</string>
+    <string name="help_tuning_title">Tuning &amp; audio</string>
+    <string name="help_tuning_description">Use the Tuner tab to pick a frequency, antenna, and audio options. The play button in the top bar starts or stops audio playback at any time.</string>
+    <string name="help_troubleshooting_title">Troubleshooting</string>
+    <string name="help_troubleshooting_description">If tuning fails, double-check the server URL and network connection. Try reconnecting from the Connection tab or restart the app to clear stale sessions.</string>
+    <string name="help_more_support_title">Need more help?</string>
+    <string name="help_more_support_description">Join the FMDX.org Discord for live help, or contact your tuner host for server access details.</string>
+    <string name="help_more_support_link">Open FMDX.org Discord</string>
+    <string name="help_discord_url" translatable="false">https://discord.com/invite/ZAVNdS74mC</string>
     <string name="fgs_media_playback_reason" translatable="false">Required to keep audio playback running while you listen to live FM streams in the background.</string>
 </resources>

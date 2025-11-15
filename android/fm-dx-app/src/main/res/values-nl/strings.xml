@@ -97,6 +97,17 @@
     <string name="about_site_link">Bezoek fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>
     <string name="about_links_title">Project links</string>
+    <string name="help_tab_title">Help</string>
+    <string name="help_getting_started_title">Aan de slag</string>
+    <string name="help_getting_started_description">Voer je FM-DX WebServer-URL in op het tabblad Verbinding, tik op Verbinden en wacht tot de status Verbonden aangeeft. Sla vaak gebruikte URL\'s op in de lijst Recent voor snelle toegang.</string>
+    <string name="help_tuning_title">Afstemmen en audio</string>
+    <string name="help_tuning_description">Gebruik het tabblad Tuner om frequentie, antenne en audio-opties te kiezen. De afspeelknop in de bovenbalk start of stopt audio op elk moment.</string>
+    <string name="help_troubleshooting_title">Problemen oplossen</string>
+    <string name="help_troubleshooting_description">Controleer bij fouten de server-URL en netwerkverbinding. Probeer opnieuw te verbinden via het tabblad Verbinding of start de app opnieuw om oude sessies te wissen.</string>
+    <string name="help_more_support_title">Meer hulp nodig?</string>
+    <string name="help_more_support_description">Word lid van de FMDX.org Discord voor directe hulp, of neem contact op met de beheerder van je tuner voor toegangsdetails.</string>
+    <string name="help_more_support_link">Open FMDX.org Discord</string>
+    <string name="help_discord_url" translatable="false">https://discord.com/invite/ZAVNdS74mC</string>
     <string name="rds_flag_tp_full">Verkeersprogramma (TP)</string>
     <string name="rds_flag_ta_full">Verkeersbericht (TA)</string>
     <string name="rds_flag_ms_music_full">Muziekprogramma</string>

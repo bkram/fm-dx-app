@@ -14,6 +14,7 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -66,6 +69,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
@@ -223,7 +227,7 @@ private fun MainScreen(
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     val tabs = buildList {
-        add(SectionTab(R.string.server) {
+        add(SectionTab(titleRes = R.string.server, requiresConnection = false) {
             ServerSection(
                 state,
                 onUpdateUrl,
@@ -231,6 +235,15 @@ private fun MainScreen(
                 onDisconnect
             )
         })
+        if (!state.isConnected) {
+            add(
+                SectionTab(
+                    titleRes = R.string.help_tab_title,
+                    scrollable = false,
+                    requiresConnection = false
+                ) { HelpSection() }
+            )
+        }
         if (state.isConnected) {
             add(SectionTab(R.string.tuner) {
                 TunerSection(
@@ -360,7 +373,7 @@ private fun MainScreen(
                             }
                         },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
-                        enabled = index == 0 || state.isConnected
+                        enabled = !tab.requiresConnection || state.isConnected
                     )
                 }
             }
@@ -379,13 +392,21 @@ private fun MainScreen(
                             .padding(16.dp)
                     ) {
                         val scrollState = rememberScrollState()
+                        val tab = tabs.getOrNull(page)
+                        val contentModifier = Modifier
+                            .fillMaxWidth()
+                            .let { base ->
+                                if (tab?.scrollable != false) {
+                                    base.verticalScroll(scrollState)
+                                } else {
+                                    base
+                                }
+                            }
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(scrollState),
+                            modifier = contentModifier,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            tabs.getOrNull(page)?.content?.invoke()
+                            tab?.content?.invoke()
                         }
                     }
                 }
@@ -568,7 +589,87 @@ internal fun clampTabIndex(currentPage: Int, tabCount: Int): Int {
 
 private data class SectionTab(
     @param:StringRes val titleRes: Int,
+    val scrollable: Boolean = true,
+    val requiresConnection: Boolean = true,
     val content: @Composable () -> Unit
+)
+
+@Composable
+private fun HelpSection() {
+    val uriHandler = LocalUriHandler.current
+    val helpItems = listOf(
+        HelpItem(
+            title = stringResource(id = R.string.help_getting_started_title),
+            description = stringResource(id = R.string.help_getting_started_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_tuning_title),
+            description = stringResource(id = R.string.help_tuning_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_troubleshooting_title),
+            description = stringResource(id = R.string.help_troubleshooting_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_more_support_title),
+            description = stringResource(id = R.string.help_more_support_description),
+            linkText = stringResource(id = R.string.help_more_support_link),
+            linkUrl = stringResource(id = R.string.help_discord_url)
+        )
+    )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(helpItems) { item ->
+            HelpCard(
+                title = item.title,
+                description = item.description,
+                linkText = item.linkText,
+                onLinkClick = item.linkUrl?.let { url ->
+                    { uriHandler.openUri(url) }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HelpCard(
+    title: String,
+    description: String,
+    linkText: String? = null,
+    onLinkClick: (() -> Unit)? = null
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (linkText != null && onLinkClick != null) {
+                TextButton(onClick = onLinkClick) {
+                    Text(text = linkText)
+                }
+            }
+        }
+    }
+}
+
+private data class HelpItem(
+    val title: String,
+    val description: String,
+    val linkText: String? = null,
+    val linkUrl: String? = null
 )
 
 private data class RdsFlagUi(
@@ -2213,6 +2314,16 @@ private fun MainScreenPreview() {
                 onShowSettings = {},
                 onShowAbout = {}
             )
+        }
+    }
+}
+
+@Preview(name = "Help Section", showBackground = true, widthDp = 360)
+@Composable
+private fun HelpSectionPreview() {
+    FmDxTheme {
+        Surface {
+            HelpSection()
         }
     }
 }
