@@ -41,6 +41,9 @@
     <string name="settings_restart_audio_on_tune">Audio opnieuw starten bij afstemmen</string>
     <string name="settings_pass_through_label">Doorsturen</string>
     <string name="settings_pass_through_desc">Verzend de UDP-telemetriepayload voor TEF Logger en soortgelijke tools. Standaard uitgeschakeld.</string>
+    <string name="pass_through_notification_channel">Pass-throughtelemetrie</string>
+    <string name="pass_through_notification_title">Doorsturen actief</string>
+    <string name="pass_through_notification_message">UDP-telemetrie verzenden voor %1$s</string>
     <string name="main_title">FM-DX App</string>
     <string name="server_url">Server-URL</string>
     <string name="rds_audio_mode_stereo">Stereo</string>

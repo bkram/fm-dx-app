@@ -33,14 +33,13 @@ import org.fmdx.app.audio.PlaybackService
 import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
-import org.fmdx.app.data.PluginTelemetryEvent
 import org.fmdx.app.data.SpectrumPluginEvent
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.network.createFmDxOkHttpClient
-import org.fmdx.app.telemetry.PassThroughTelemetrySender
+import org.fmdx.app.telemetry.PassThroughService
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -48,7 +47,6 @@ import kotlin.math.roundToInt
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val okHttpClient = createFmDxOkHttpClient()
     private val repository = FmDxRepository(okHttpClient)
-    private val telemetrySender = PassThroughTelemetrySender(application, viewModelScope)
 
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val preferenceListener =
@@ -132,7 +130,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 passThroughEnabled = passThroughEnabled
             )
         }
-        telemetrySender.setFeatureEnabled(passThroughEnabled)
         persistSettings(
             signalUnit,
             clampedNetwork,
@@ -140,6 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             restartAudioOnTune,
             passThroughEnabled
         )
+        updatePassThroughServiceState()
     }
 
     fun connect() {
@@ -185,11 +183,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         statusMessage = null
                     )
                 }
-                telemetrySender.onConnected(sanitized)
                 startControlConnection(sanitized)
                 startPluginConnection(sanitized)
                 scheduleLogoUpdate(sanitized, _uiState.value.tunerState)
                 refreshSpectrum(sanitized)
+                updatePassThroughServiceState()
             } catch (ex: Exception) {
                 logDebug("connect(): failed", ex)
                 _uiState.update {
@@ -205,7 +203,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
-        telemetrySender.onDisconnected()
         controlConnection?.close()
         controlConnection = null
         pluginConnection?.close()
@@ -234,6 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 stationLogoUrl = DEFAULT_LOGO_URL
             )
         }
+        updatePassThroughServiceState()
     }
 
     fun toggleAudio() {
@@ -396,7 +394,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         antennas = if (it.antennas.isEmpty() && it.tunerInfo != null) it.tunerInfo.antennaNames else it.antennas
                     )
                 }
-                telemetrySender.updateTunerState(state)
                 scheduleLogoUpdate(url, state)
             },
             onClosed = {
@@ -428,8 +425,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pluginConnection = repository.connectPlugin(
             baseUrl = url,
             userAgent = BuildConfig.USER_AGENT,
-            onEvent = { event -> handleSpectrumEvent(url, event) },
-            onTelemetryEvent = { event -> handleTelemetryEvent(event) }
+            onEvent = { event -> handleSpectrumEvent(url, event) }
         ) { error ->
             logDebug("plugin socket: error", error)
             _uiState.update { it.copy(errorMessage = error.message) }
@@ -472,26 +468,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         viewModelScope.launch { refreshSpectrum(baseUrl) }
                     }
                 }
-            }
-        }
-    }
-
-    private fun handleTelemetryEvent(event: PluginTelemetryEvent) {
-        when (event) {
-            is PluginTelemetryEvent.Scanner -> {
-                if (event.status.equals("response", ignoreCase = true)) {
-                    telemetrySender.updateScannerScanState(event.scanValue)
-                }
-            }
-
-            is PluginTelemetryEvent.Gps -> {
-                telemetrySender.handleGpsEvent(
-                    status = event.status,
-                    lat = event.lat,
-                    lon = event.lon,
-                    alt = event.alt,
-                    mode = event.mode
-                )
             }
         }
     }
@@ -589,6 +565,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun ensureSpectrum(points: List<SpectrumPoint>): List<SpectrumPoint> {
         return points.ifEmpty { baselineSpectrum() }
+    }
+
+    private fun updatePassThroughServiceState() {
+        val state = _uiState.value
+        val app = getApplication<Application>()
+        val url = state.serverUrl
+        if (state.passThroughEnabled && state.isConnected && url.isNotBlank()) {
+            PassThroughService.start(app, url)
+        } else {
+            PassThroughService.stop(app)
+        }
     }
 
     private fun scheduleLogoUpdate(baseUrl: String, state: TunerState?) {
@@ -729,7 +716,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 passThroughEnabled = passThroughEnabled
             )
         }
-        telemetrySender.setFeatureEnabled(passThroughEnabled)
     }
 
     private fun refreshBufferSettings() {
