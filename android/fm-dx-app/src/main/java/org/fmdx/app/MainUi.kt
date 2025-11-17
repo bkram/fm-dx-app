@@ -159,7 +159,7 @@ internal fun FmDxApp(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
 ) {
     val showSettingsState = rememberSaveable { mutableStateOf(false) }
     val showAboutState = rememberSaveable { mutableStateOf(false) }
@@ -419,7 +419,7 @@ private fun MainScreen(
 @Composable
 private fun SettingsScreen(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -1267,12 +1267,13 @@ private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
 @Composable
 private fun SettingsSection(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
 ) {
     var signalUnit by remember(state.signalUnit) { mutableStateOf(state.signalUnit) }
     var networkBuffer by remember(state.networkBuffer) { mutableStateOf(state.networkBuffer.toString()) }
     var playerBuffer by remember(state.playerBuffer) { mutableStateOf(state.playerBuffer.toString()) }
     var restartAudioOnTune by remember(state.restartAudioOnTune) { mutableStateOf(state.restartAudioOnTune) }
+    var passThroughEnabled by remember(state.passThroughEnabled) { mutableStateOf(state.passThroughEnabled) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -1341,6 +1342,27 @@ private fun SettingsSection(
                     Spacer(Modifier.width(8.dp))
                     RdsLabelText(text = stringResource(id = R.string.settings_restart_audio_on_tune))
                 }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { passThroughEnabled = !passThroughEnabled }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = passThroughEnabled,
+                        onCheckedChange = { passThroughEnabled = it }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        RdsLabelText(text = stringResource(id = R.string.settings_pass_through_label))
+                        Text(
+                            text = stringResource(id = R.string.settings_pass_through_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
         Button(
@@ -1349,7 +1371,8 @@ private fun SettingsSection(
                     signalUnit,
                     networkBuffer.toIntOrNull() ?: state.networkBuffer,
                     playerBuffer.toIntOrNull() ?: state.playerBuffer,
-                    restartAudioOnTune
+                    restartAudioOnTune,
+                    passThroughEnabled
                 )
             },
             modifier = Modifier.fillMaxWidth()
@@ -2511,7 +2534,7 @@ private fun SettingsScreenPreview() {
         Surface {
             SettingsScreen(
                 state = previewUiState(),
-                onUpdateSettings = { _, _, _, _ -> },
+                onUpdateSettings = { _, _, _, _, _ -> },
                 onBack = {}
             )
         }

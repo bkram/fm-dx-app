@@ -39,6 +39,8 @@
     <string name="settings_network_buffer_label">Netwerkbuffer (blokken)</string>
     <string name="settings_player_buffer_label">Spelerbuffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Audio opnieuw starten bij afstemmen</string>
+    <string name="settings_pass_through_label">Doorsturen</string>
+    <string name="settings_pass_through_desc">Verzend de UDP-telemetriepayload voor TEF Logger en soortgelijke tools. Standaard uitgeschakeld.</string>
     <string name="main_title">FM-DX App</string>
     <string name="server_url">Server-URL</string>
     <string name="rds_audio_mode_stereo">Stereo</string>

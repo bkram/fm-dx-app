@@ -102,6 +102,7 @@ class FmDxRepository(
         baseUrl: String,
         userAgent: String,
         onEvent: (SpectrumPluginEvent) -> Unit,
+        onTelemetryEvent: (PluginTelemetryEvent) -> Unit = {},
         onError: (Throwable) -> Unit
     ): PluginConnection {
         val wsUrl = buildWebSocketUrl(baseUrl, "data_plugins")
@@ -119,6 +120,7 @@ class FmDxRepository(
                 logDebug("plugin socket: message length=${text.length}")
                 try {
                     val json = JSONObject(text)
+                    handleTelemetryMessage(json, onTelemetryEvent)
                     val payload = json.optJSONObject("value") ?: json
                     val status = payload.optString("status").takeIf { it.isNotBlank() }
                     val points = parseSpectrumDataset(payload)
@@ -133,6 +135,34 @@ class FmDxRepository(
             }
         })
         return PluginConnection(webSocket)
+    }
+
+    private fun handleTelemetryMessage(
+        json: JSONObject,
+        onTelemetryEvent: (PluginTelemetryEvent) -> Unit
+    ) {
+        val type = json.optString("type").takeIf { it.isNotBlank() } ?: return
+        val value = json.optJSONObject("value") ?: return
+        when (type.lowercase(Locale.ROOT)) {
+            "scanner" -> {
+                val status = value.optString("status", null)
+                val scanValue = value.optString("Scan", null)
+                if (!status.isNullOrBlank() || !scanValue.isNullOrBlank()) {
+                    onTelemetryEvent(PluginTelemetryEvent.Scanner(status, scanValue))
+                }
+            }
+
+            "gps" -> {
+                val status = value.optString("status", null)
+                val lat = value.optString("lat", null)
+                val lon = value.optString("lon", null)
+                val alt = value.optString("alt", null)
+                val mode = value.optString("mode", null)
+                if (!status.isNullOrBlank() || !lat.isNullOrBlank() || !lon.isNullOrBlank()) {
+                    onTelemetryEvent(PluginTelemetryEvent.Gps(status, lat, lon, alt, mode))
+                }
+            }
+        }
     }
 
     suspend fun findStationLogo(

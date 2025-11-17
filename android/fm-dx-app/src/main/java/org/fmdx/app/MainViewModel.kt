@@ -33,12 +33,14 @@ import org.fmdx.app.audio.PlaybackService
 import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
+import org.fmdx.app.data.PluginTelemetryEvent
 import org.fmdx.app.data.SpectrumPluginEvent
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.network.createFmDxOkHttpClient
+import org.fmdx.app.telemetry.PassThroughTelemetrySender
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -46,6 +48,7 @@ import kotlin.math.roundToInt
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val okHttpClient = createFmDxOkHttpClient()
     private val repository = FmDxRepository(okHttpClient)
+    private val telemetrySender = PassThroughTelemetrySender(application, viewModelScope)
 
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val preferenceListener =
@@ -112,7 +115,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         signalUnit: SignalUnit,
         networkBuffer: Int,
         playerBuffer: Int,
-        restartAudioOnTune: Boolean
+        restartAudioOnTune: Boolean,
+        passThroughEnabled: Boolean
     ) {
         val clampedNetwork = networkBuffer.coerceIn(
             DEFAULT_NETWORK_BUFFER_CHUNKS,
@@ -124,10 +128,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 signalUnit = signalUnit,
                 networkBuffer = clampedNetwork,
                 playerBuffer = clampedPlayer,
-                restartAudioOnTune = restartAudioOnTune
+                restartAudioOnTune = restartAudioOnTune,
+                passThroughEnabled = passThroughEnabled
             )
         }
-        persistSettings(signalUnit, clampedNetwork, clampedPlayer, restartAudioOnTune)
+        telemetrySender.setFeatureEnabled(passThroughEnabled)
+        persistSettings(
+            signalUnit,
+            clampedNetwork,
+            clampedPlayer,
+            restartAudioOnTune,
+            passThroughEnabled
+        )
     }
 
     fun connect() {
@@ -173,6 +185,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         statusMessage = null
                     )
                 }
+                telemetrySender.onConnected(sanitized)
                 startControlConnection(sanitized)
                 startPluginConnection(sanitized)
                 scheduleLogoUpdate(sanitized, _uiState.value.tunerState)
@@ -192,6 +205,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
+        telemetrySender.onDisconnected()
         controlConnection?.close()
         controlConnection = null
         pluginConnection?.close()
@@ -382,6 +396,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         antennas = if (it.antennas.isEmpty() && it.tunerInfo != null) it.tunerInfo.antennaNames else it.antennas
                     )
                 }
+                telemetrySender.updateTunerState(state)
                 scheduleLogoUpdate(url, state)
             },
             onClosed = {
@@ -413,7 +428,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pluginConnection = repository.connectPlugin(
             baseUrl = url,
             userAgent = BuildConfig.USER_AGENT,
-            onEvent = { event -> handleSpectrumEvent(url, event) }
+            onEvent = { event -> handleSpectrumEvent(url, event) },
+            onTelemetryEvent = { event -> handleTelemetryEvent(event) }
         ) { error ->
             logDebug("plugin socket: error", error)
             _uiState.update { it.copy(errorMessage = error.message) }
@@ -456,6 +472,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         viewModelScope.launch { refreshSpectrum(baseUrl) }
                     }
                 }
+            }
+        }
+    }
+
+    private fun handleTelemetryEvent(event: PluginTelemetryEvent) {
+        when (event) {
+            is PluginTelemetryEvent.Scanner -> {
+                if (event.status.equals("response", ignoreCase = true)) {
+                    telemetrySender.updateScannerScanState(event.scanValue)
+                }
+            }
+
+            is PluginTelemetryEvent.Gps -> {
+                telemetrySender.handleGpsEvent(
+                    status = event.status,
+                    lat = event.lat,
+                    lon = event.lon,
+                    alt = event.alt,
+                    mode = event.mode
+                )
             }
         }
     }
@@ -593,6 +629,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_PLAYER_BUFFER = "player_buffer"
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
         private const val KEY_RECENT_SERVER_URLS = "recent_server_urls"
+        private const val KEY_PASS_THROUGH_ENABLED = "pass_through_enabled"
         private const val TAG = "MainViewModel"
         private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
         private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE =
@@ -656,13 +693,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         signalUnit: SignalUnit,
         networkBuffer: Int,
         playerBuffer: Int,
-        restartAudioOnTune: Boolean
+        restartAudioOnTune: Boolean,
+        passThroughEnabled: Boolean
     ) {
         preferences.edit {
             putString(KEY_SIGNAL_UNIT, signalUnit.name)
             putInt(KEY_NETWORK_BUFFER, networkBuffer)
             putInt(KEY_PLAYER_BUFFER, playerBuffer)
             putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
+            putBoolean(KEY_PASS_THROUGH_ENABLED, passThroughEnabled)
         }
     }
 
@@ -680,14 +719,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         val playerBuffer = persistedPlayerBuffer.coerceAtLeast(DEFAULT_PLAYER_BUFFER_MS)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
+        val passThroughEnabled = preferences.getBoolean(KEY_PASS_THROUGH_ENABLED, false)
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
                 networkBuffer = networkBuffer,
                 playerBuffer = playerBuffer,
-                restartAudioOnTune = restartAudioOnTune
+                restartAudioOnTune = restartAudioOnTune,
+                passThroughEnabled = passThroughEnabled
             )
         }
+        telemetrySender.setFeatureEnabled(passThroughEnabled)
     }
 
     private fun refreshBufferSettings() {
@@ -729,6 +771,7 @@ data class UiState(
     val networkBuffer: Int = DEFAULT_NETWORK_BUFFER_CHUNKS,
     val playerBuffer: Int = DEFAULT_PLAYER_BUFFER_MS,
     val restartAudioOnTune: Boolean = false,
+    val passThroughEnabled: Boolean = false,
     val statusMessage: String? = null,
     val pendingFrequencyMHz: Double? = null,
     val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL
