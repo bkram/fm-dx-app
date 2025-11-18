@@ -20,6 +20,10 @@
 ## 1.6.5 Server connect
 
 Connect to any of the public servers listed om maps.fmdx.org.
+The https://servers.fmdx.org/api/ call returns a json with all the servers, we should have some kind
+of mechanism to fetch them and select one of them, in a native like android way.
+
+the normal server connect should also remain
 
 ## 1.7.0 – Audio Recording
 

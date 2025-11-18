@@ -96,6 +96,8 @@
     <string name="station_polarization_label">Polarisatie: %1$s</string>
     <string name="station_azimuth_label">Azimut: %1$s</string>
     <string name="signal_label_prefix">"Signaal: "</string>
+    <string name="connection_tab_title">Verbinding</string>
+    <string name="server_info_tab_title">Serverinfo</string>
     <string name="server_info_title">Serverinformatie</string>
     <string name="server_info_tuner_name">%1$s</string>
     <string name="server_info_unavailable">Geen servergegevens beschikbaar.</string>

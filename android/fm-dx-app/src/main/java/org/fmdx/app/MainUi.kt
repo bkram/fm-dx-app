@@ -227,14 +227,29 @@ private fun MainScreen(
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     val tabs = buildList {
-        add(SectionTab(titleRes = R.string.server, requiresConnection = false) {
-            ServerSection(
-                state,
-                onUpdateUrl,
-                onConnect,
-                onDisconnect
+        add(
+            SectionTab(
+                titleRes = R.string.connection_tab_title,
+                scrollable = false,
+                requiresConnection = false
+            ) {
+                ConnectionSection(
+                    state = state,
+                    onUpdateUrl = onUpdateUrl,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect
+                )
+            }
+        )
+        if (state.isConnected) {
+            add(
+                SectionTab(
+                    titleRes = R.string.server_info_tab_title,
+                    scrollable = false,
+                    requiresConnection = true
+                ) { ServerInfoSection(state) }
             )
-        })
+        }
         if (!state.isConnected) {
             add(
                 SectionTab(
@@ -739,7 +754,7 @@ private fun ConnectionStatusIndicator(
 }
 
 @Composable
-private fun ServerSection(
+private fun ConnectionSection(
     state: UiState,
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
@@ -842,13 +857,6 @@ private fun ServerSection(
                 }
             }
         }
-        if (state.isConnected) {
-            ServerInfoCard(
-                tunerInfo = state.tunerInfo,
-                users = state.tunerState?.users,
-                latencyMs = state.serverLatencyMs
-            )
-        }
     }
 }
 
@@ -896,6 +904,17 @@ private fun ServerInfoCard(
                 value = latencyValue
             )
         }
+    }
+}
+
+@Composable
+private fun ServerInfoSection(state: UiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ServerInfoCard(
+            tunerInfo = state.tunerInfo,
+            users = state.tunerState?.users,
+            latencyMs = state.serverLatencyMs
+        )
     }
 }
 
@@ -2568,17 +2587,27 @@ private fun previewUiState(): UiState {
     )
 }
 
-@Preview(name = "Server Section", showBackground = true, widthDp = 360)
+@Preview(name = "Connection Section", showBackground = true, widthDp = 360)
 @Composable
-private fun ServerSectionPreview() {
+private fun ConnectionSectionPreview() {
     FmDxTheme {
         Surface {
-            ServerSection(
+            ConnectionSection(
                 state = previewUiState().copy(isConnected = false, isConnecting = false),
                 onUpdateUrl = {},
                 onConnect = {},
                 onDisconnect = {}
             )
+        }
+    }
+}
+
+@Preview(name = "Server Info Section", showBackground = true, widthDp = 360)
+@Composable
+private fun ServerInfoSectionPreview() {
+    FmDxTheme {
+        Surface {
+            ServerInfoSection(state = previewUiState())
         }
     }
 }
