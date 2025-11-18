@@ -39,8 +39,10 @@
     <string name="settings_network_buffer_label">Netwerkbuffer (blokken)</string>
     <string name="settings_player_buffer_label">Spelerbuffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Audio opnieuw starten bij afstemmen</string>
-    <string name="settings_pass_through_label">Doorsturen</string>
-    <string name="settings_pass_through_desc">Verzend de UDP-telemetriepayload voor TEF Logger en soortgelijke tools. Standaard uitgeschakeld.</string>
+    <string name="settings_pass_through_label">TEF Logger</string>
+    <string name="settings_pass_through_desc">Verzend de metrics naar de TEF Logger. Standaard uitgeschakeld.</string>
+    <string name="settings_pass_through_enabled">Ingeschakeld</string>
+    <string name="settings_pass_through_disabled">Uitgeschakeld</string>
     <string name="pass_through_notification_channel">Pass-throughtelemetrie</string>
     <string name="pass_through_notification_title">Doorsturen actief</string>
     <string name="pass_through_notification_message">UDP-telemetrie verzenden voor %1$s</string>
@@ -122,4 +124,6 @@
     <string name="about_version">Versie %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">GitHub: fm-dx-webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
+    <string name="about_teflogger_title">GitHub: TEF Logger App</string>
+    <string name="about_teflogger_url">https://github.com/highpoint2000/TEFLoggerapp</string>
 </resources>

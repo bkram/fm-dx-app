@@ -40,8 +40,10 @@
     <string name="settings_network_buffer_label">Network Buffer (chunks)</string>
     <string name="settings_player_buffer_label">Player Buffer (ms)</string>
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
-    <string name="settings_pass_through_label">Pass through</string>
-    <string name="settings_pass_through_desc">Send the UDP telemetry payload for TEF Logger and similar tools. Disabled by default.</string>
+    <string name="settings_pass_through_label">TEF Logger</string>
+    <string name="settings_pass_through_desc">Send the metrics to the TEF Logger. Disabled by default.</string>
+    <string name="settings_pass_through_enabled">Enabled</string>
+    <string name="settings_pass_through_disabled">Disabled</string>
     <string name="pass_through_notification_channel">Pass through telemetry</string>
     <string name="pass_through_notification_title">Pass through active</string>
     <string name="pass_through_notification_message">Sending UDP telemetry for %1$s</string>
@@ -129,6 +131,8 @@
     <string name="about_version">Version %1$s (build %2$d)</string>
     <string name="about_fmdxwebserver_title">GitHub: FM-DX Webserver</string>
     <string name="about_fmdxwebserver_url">https://github.com/NoobishSVK/fm-dx-webserver</string>
+    <string name="about_teflogger_title">GitHub: TEF Logger App</string>
+    <string name="about_teflogger_url">https://github.com/highpoint2000/TEFLoggerapp</string>
     <string name="help_tab_title">Help</string>
     <string name="help_getting_started_title">Getting started</string>
     <string name="help_getting_started_description">Enter your FM-DX WebServer URL on the Connection tab, tap Connect, and wait for the status to show Connected. Save frequently used URLs in the Recent list for quicker access.</string>

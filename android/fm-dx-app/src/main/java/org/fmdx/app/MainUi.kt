@@ -464,6 +464,8 @@ private fun AboutScreen(onBack: () -> Unit) {
     val fmdxOrgSiteUrl = stringResource(id = R.string.about_site_url)
     val fmdxWebServerUrl = stringResource(id = R.string.about_fmdxwebserver_url)
     val fmdxWebServerLabel = stringResource(id = R.string.about_fmdxwebserver_title)
+    val tefLoggerLabel = stringResource(id = R.string.about_teflogger_title)
+    val tefLoggerUrl = stringResource(id = R.string.about_teflogger_url)
     val versionName = BuildConfig.VERSION_NAME
     val versionCode = BuildConfig.VERSION_CODE
     val versionLabel = stringResource(id = R.string.about_version, versionName, versionCode)
@@ -560,6 +562,20 @@ private fun AboutScreen(onBack: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { uriHandler.openUri(fmdxWebServerUrl) }
+                    )
+                    ListItem(
+                        headlineContent = { Text(text = tefLoggerLabel) },
+                        supportingContent = { Text(text = tefLoggerUrl) },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(tefLoggerUrl) }
                     )
                     HorizontalDivider()
                     ListItem(
@@ -1342,10 +1358,30 @@ private fun SettingsSection(
                     Spacer(Modifier.width(8.dp))
                     RdsLabelText(text = stringResource(id = R.string.settings_restart_audio_on_tune))
                 }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_pass_through_label),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(id = R.string.settings_pass_through_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
                         .clickable { passThroughEnabled = !passThroughEnabled }
                         .padding(vertical = 4.dp)
                 ) {
@@ -1354,14 +1390,15 @@ private fun SettingsSection(
                         onCheckedChange = { passThroughEnabled = it }
                     )
                     Spacer(Modifier.width(8.dp))
-                    Column {
-                        RdsLabelText(text = stringResource(id = R.string.settings_pass_through_label))
-                        Text(
-                            text = stringResource(id = R.string.settings_pass_through_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = if (passThroughEnabled) {
+                            stringResource(id = R.string.settings_pass_through_enabled)
+                        } else {
+                            stringResource(id = R.string.settings_pass_through_disabled)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
