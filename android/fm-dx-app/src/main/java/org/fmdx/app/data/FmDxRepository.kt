@@ -148,20 +148,20 @@ class FmDxRepository(
         val value = json.optJSONObject("value") ?: return
         when (type.lowercase(Locale.ROOT)) {
             "scanner" -> {
-                val status = value.optString("status", null)
-                val scanValue = value.optString("Scan", null)
-                if (!status.isNullOrBlank() || !scanValue.isNullOrBlank()) {
+                val status = value.optString("status").takeIf { it.isNotBlank() }
+                val scanValue = value.optString("Scan").takeIf { it.isNotBlank() }
+                if (status != null || scanValue != null) {
                     onTelemetryEvent(PluginTelemetryEvent.Scanner(status, scanValue))
                 }
             }
 
             "gps" -> {
-                val status = value.optString("status", null)
-                val lat = value.optString("lat", null)
-                val lon = value.optString("lon", null)
-                val alt = value.optString("alt", null)
-                val mode = value.optString("mode", null)
-                if (!status.isNullOrBlank() || !lat.isNullOrBlank() || !lon.isNullOrBlank()) {
+                val status = value.optString("status").takeIf { it.isNotBlank() }
+                val lat = value.optString("lat").takeIf { it.isNotBlank() }
+                val lon = value.optString("lon").takeIf { it.isNotBlank() }
+                val alt = value.optString("alt").takeIf { it.isNotBlank() }
+                val mode = value.optString("mode").takeIf { it.isNotBlank() }
+                if (status != null || lat != null || lon != null) {
                     onTelemetryEvent(PluginTelemetryEvent.Gps(status, lat, lon, alt, mode))
                 }
             }

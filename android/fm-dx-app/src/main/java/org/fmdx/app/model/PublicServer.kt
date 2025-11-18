@@ -124,7 +124,11 @@ data class PublicServer(
         val resolvedCountry = normalizedCountryName
             ?: countryCode
                 ?.normalized()
-                ?.let { Locale("", it).displayCountry.takeIf { name -> name.isNotBlank() } }
+                ?.let { region ->
+                    runCatching { Locale.Builder().setRegion(region).build() }.getOrNull()
+                        ?.displayCountry
+                        ?.takeIf { name -> name.isNotBlank() }
+                }
             ?: countryCode
                 ?.normalized()
                 ?.uppercase(Locale.ROOT)
