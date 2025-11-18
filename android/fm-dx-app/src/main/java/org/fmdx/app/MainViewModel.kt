@@ -35,6 +35,7 @@ import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.data.SpectrumPluginEvent
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -72,6 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var spectrumScanFallbackJob: Job? = null
     private var stationLogoJob: Job? = null
     private var latencyJob: Job? = null
+    private var publicServerJob: Job? = null
     private var lastLogoKey: String? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.let { if (it.isDone) it.get() else null }
@@ -109,6 +111,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateServerUrl(url: String) {
         _uiState.update { it.copy(serverUrl = url) }
+    }
+
+    fun showPublicServerPicker() {
+        val pickerState = _uiState.value.publicServerPickerState
+        if (!pickerState.isVisible) {
+            updatePublicServerPicker { it.copy(isVisible = true) }
+        }
+        if (pickerState.servers.isEmpty()) {
+            loadPublicServers(forceRefresh = false)
+        }
+    }
+
+    fun hidePublicServerPicker() {
+        updatePublicServerPicker { it.copy(isVisible = false, errorMessage = null) }
+    }
+
+    fun refreshPublicServerPicker() {
+        loadPublicServers(forceRefresh = true)
+    }
+
+    fun updatePublicServerQuery(query: String) {
+        updatePublicServerPicker { picker ->
+            val trimmed = query.take(MAX_PUBLIC_SERVER_QUERY_LENGTH)
+            picker.copy(
+                query = trimmed,
+                filteredServers = filterPublicServers(picker.servers, trimmed)
+            )
+        }
+    }
+
+    fun selectPublicServer(server: PublicServer) {
+        updateServerUrl(server.url)
+        updatePublicServerPicker { it.copy(isVisible = false) }
     }
 
     fun updateSettings(
@@ -226,13 +261,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isConnecting = false,
                 audioPlaying = false,
                 isScanning = false,
-                statusMessage = "Disconnected",
+                statusMessage = null,
                 errorMessage = null,
                 tunerInfo = null,
                 tunerState = null,
                 antennas = emptyList(),
                 spectrum = baselineSpectrum(),
-                stationLogoUrl = DEFAULT_LOGO_URL
+                stationLogoUrl = DEFAULT_LOGO_URL,
+                isSpectrumAvailable = true
             )
         }
         updatePassThroughServiceState()
@@ -346,8 +382,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     refreshSpectrum(url)
                     _uiState.update {
                         it.copy(
-                            isScanning = false,
-                            statusMessage = it.statusMessage ?: SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                            isScanning = false
                         )
                     }
                 }
@@ -371,11 +406,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (spectrumPoints != null) {
                 state.copy(
                     spectrum = spectrumPoints,
-                    statusMessage = null
+                    statusMessage = null,
+                    isSpectrumAvailable = true
                 )
             } else {
                 state.copy(
-                    statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                    statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE,
+                    isSpectrumAvailable = false
                 )
             }
         }
@@ -466,7 +503,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     spectrum = ensureSpectrum(points),
-                    isScanning = false
+                    isScanning = false,
+                    isSpectrumAvailable = true
                 )
             }
         }
@@ -651,6 +689,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "Spectrum data unavailable on this server."
         private const val LATENCY_POLL_INTERVAL_MS = 15_000L
         private const val LATENCY_EMA_ALPHA = 0.3
+        private const val MAX_PUBLIC_SERVER_QUERY_LENGTH = 80
         const val DEFAULT_LOGO_URL = FmDxRepository.DEFAULT_LOGO_URL
 
         fun baselineSpectrum(): List<SpectrumPoint> {
@@ -769,6 +808,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.d(TAG, message)
         }
     }
+
+    private fun loadPublicServers(forceRefresh: Boolean) {
+        if (publicServerJob?.isActive == true) {
+            if (!forceRefresh) return
+            publicServerJob?.cancel()
+        }
+        publicServerJob = viewModelScope.launch {
+            updatePublicServerPicker { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val servers =
+                    repository.getPublicServers(BuildConfig.USER_AGENT, forceRefresh = forceRefresh)
+                updatePublicServerPicker { picker ->
+                    picker.copy(
+                        servers = servers,
+                        filteredServers = filterPublicServers(servers, picker.query),
+                        isLoading = false,
+                        errorMessage = null
+                    )
+                }
+            } catch (ex: Exception) {
+                logDebug("loadPublicServers(): failed", ex)
+                updatePublicServerPicker { picker ->
+                    picker.copy(
+                        isLoading = false,
+                        errorMessage = ex.message ?: "Unable to load public servers"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun updatePublicServerPicker(
+        transform: (PublicServerPickerState) -> PublicServerPickerState
+    ) {
+        _uiState.update { state ->
+            state.copy(publicServerPickerState = transform(state.publicServerPickerState))
+        }
+    }
+
+    private fun filterPublicServers(
+        servers: List<PublicServer>,
+        query: String
+    ): List<PublicServer> {
+        if (query.isBlank()) return servers
+        return servers.filter { server -> server.matchesQuery(query) }
+    }
+
 }
 
 data class UiState(
@@ -791,5 +877,16 @@ data class UiState(
     val statusMessage: String? = null,
     val pendingFrequencyMHz: Double? = null,
     val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL,
-    val serverLatencyMs: Double? = null
+    val serverLatencyMs: Double? = null,
+    val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
+    val isSpectrumAvailable: Boolean = true
+)
+
+data class PublicServerPickerState(
+    val isVisible: Boolean = false,
+    val isLoading: Boolean = false,
+    val query: String = "",
+    val errorMessage: String? = null,
+    val servers: List<PublicServer> = emptyList(),
+    val filteredServers: List<PublicServer> = emptyList()
 )

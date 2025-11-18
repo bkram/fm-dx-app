@@ -1,30 +1,5 @@
 # Roadmap
 
-
-## 1.6 – Enhanced Server Diagnostics
-
-- **Feature goals**: split the existing server view into “Connection” vs “Server info” tabs and
-  enrich the latter with concurrent user counts and control-socket round-trip latency.
-- **Technical steps**
-    - Introduce a tabbed layout in `MainUi.kt` (e.g., `TabRow` with “Connection”/“Server Info”),
-      keeping connection controls isolated from read-only diagnostics; update previews and
-      navigation state accordingly.
-    - Extend `FmDxRepository` and control WebSocket parsing to expose users/latency metrics (based
-      on server payloads or ping-heartbeats) and persist them in `UiState`, smoothing latency (EMA)
-      for UI stability.
-    - Populate the Server Info tab with the new telemetry plus the existing metadata cards, ensuring
-      Compose components mirror the established styles and accessibility semantics.
-    - Add analytics/logging hooks so regressions can be monitored, and document the new output in
-      `README.md`.
-
-## 1.6.5 Server connect
-
-Connect to any of the public servers listed om maps.fmdx.org.
-The https://servers.fmdx.org/api/ call returns a json with all the servers, we should have some kind
-of mechanism to fetch them and select one of them, in a native like android way.
-
-the normal server connect should also remain
-
 ## 1.7.0 – Audio Recording
 
 - **Feature goals**: allow users to record the currently tuned audio stream for later
@@ -54,3 +29,18 @@ the normal server connect should also remain
       metrics for deep-link usage.
     - Add unit tests for the URI parser plus instrumentation tests validating that intent extras
       route through the proper entry point; document the QR payload format for partners.
+
+## 1.9 – RDS Spy Capture Export
+
+- **Feature goals**: capture live RDS groups from the control channel and export them in the RDS
+  Spy `.spy` format for offline analysis or sharing with DX communities.
+- **Technical steps**
+    - Mirror the current desktop helper (see `docs/rds-spy-capture.cpp`) by tapping into the
+      control socket’s RDS group stream and buffering the `G:` payloads on-device.
+    - Provide a Compose UI surface that shows the most recent blocks, allows starting/stopping
+      captures, and exports the backlog to `.spy` files stored via `MediaStore` with consistent
+      naming conventions.
+    - Add background processing safeguards so captures stay alive when the app is backgrounded, and
+      expose share/delete actions alongside basic metadata (station, timestamp range).
+    - Write JVM unit tests for the formatter and timestamping logic plus instrumentation tests that
+      verify storage permission prompts and file export flows.

@@ -43,7 +43,12 @@ class MainActivity : ComponentActivity() {
                     formatSignal = { s, unit -> viewModel.formatSignal(s, unit) },
                     currentPty = viewModel::currentPty,
                     antennaLabel = viewModel::antennaLabel,
-                    onUpdateSettings = viewModel::updateSettings
+                    onUpdateSettings = viewModel::updateSettings,
+                    onShowPublicServerPicker = viewModel::showPublicServerPicker,
+                    onHidePublicServerPicker = viewModel::hidePublicServerPicker,
+                    onRefreshPublicServers = viewModel::refreshPublicServerPicker,
+                    onUpdatePublicServerQuery = viewModel::updatePublicServerQuery,
+                    onSelectPublicServer = viewModel::selectPublicServer
                 )
             }
         }

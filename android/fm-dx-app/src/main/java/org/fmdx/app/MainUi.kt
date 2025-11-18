@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,9 +41,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,6 +65,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -72,6 +79,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -130,6 +138,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -159,7 +168,12 @@ internal fun FmDxApp(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onShowPublicServerPicker: () -> Unit,
+    onHidePublicServerPicker: () -> Unit,
+    onRefreshPublicServers: () -> Unit,
+    onUpdatePublicServerQuery: (String) -> Unit,
+    onSelectPublicServer: (PublicServer) -> Unit
 ) {
     val showSettingsState = rememberSaveable { mutableStateOf(false) }
     val showAboutState = rememberSaveable { mutableStateOf(false) }
@@ -197,7 +211,12 @@ internal fun FmDxApp(
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
                 onShowSettings = { showSettingsState.value = true },
-                onShowAbout = { showAboutState.value = true }
+                onShowAbout = { showAboutState.value = true },
+                onShowPublicServerPicker = onShowPublicServerPicker,
+                onHidePublicServerPicker = onHidePublicServerPicker,
+                onRefreshPublicServers = onRefreshPublicServers,
+                onUpdatePublicServerQuery = onUpdatePublicServerQuery,
+                onSelectPublicServer = onSelectPublicServer
             )
         }
     }
@@ -222,7 +241,12 @@ private fun MainScreen(
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
     onShowSettings: () -> Unit,
-    onShowAbout: () -> Unit
+    onShowAbout: () -> Unit,
+    onShowPublicServerPicker: () -> Unit,
+    onHidePublicServerPicker: () -> Unit,
+    onRefreshPublicServers: () -> Unit,
+    onUpdatePublicServerQuery: (String) -> Unit,
+    onSelectPublicServer: (PublicServer) -> Unit
 ) {
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
@@ -237,7 +261,8 @@ private fun MainScreen(
                     state = state,
                     onUpdateUrl = onUpdateUrl,
                     onConnect = onConnect,
-                    onDisconnect = onDisconnect
+                    onDisconnect = onDisconnect,
+                    onShowPublicServerPicker = onShowPublicServerPicker
                 )
             }
         )
@@ -274,16 +299,18 @@ private fun MainScreen(
                 )
             })
             add(SectionTab(R.string.rds) { InformationSection(state, currentPty) })
-            add(
-                SectionTab(R.string.spectrum) {
-                    SpectrumSection(
-                        state = state,
-                        onScan = onScan,
-                        onTuneDirect = onTuneDirect,
-                        onDragStateChange = { dragging -> isSpectrumDragging = dragging }
-                    )
-                }
-            )
+            if (state.isSpectrumAvailable) {
+                add(
+                    SectionTab(R.string.spectrum) {
+                        SpectrumSection(
+                            state = state,
+                            onScan = onScan,
+                            onTuneDirect = onTuneDirect,
+                            onDragStateChange = { dragging -> isSpectrumDragging = dragging }
+                        )
+                    }
+                )
+            }
         }
     }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
@@ -427,6 +454,16 @@ private fun MainScreen(
                 }
             }
         }
+    }
+
+    if (state.publicServerPickerState.isVisible) {
+        PublicServerPickerSheet(
+            pickerState = state.publicServerPickerState,
+            onDismiss = onHidePublicServerPicker,
+            onRefresh = onRefreshPublicServers,
+            onQueryChange = onUpdatePublicServerQuery,
+            onSelect = onSelectPublicServer
+        )
     }
 }
 
@@ -758,7 +795,8 @@ private fun ConnectionSection(
     state: UiState,
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onShowPublicServerPicker: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
     val connectAndDismissKeyboard = {
@@ -825,6 +863,13 @@ private fun ConnectionSection(
                         }
                     }
                 }
+
+                FilledTonalButton(
+                    onClick = onShowPublicServerPicker,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.browse_public_servers))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.isConnected) {
                         OutlinedButton(onClick = onConnect, enabled = false) {
@@ -848,14 +893,324 @@ private fun ConnectionSection(
                 if (state.isConnecting) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
-                state.statusMessage?.let { message ->
+                val disconnectedLabel = stringResource(id = R.string.disconnected)
+                val shouldShowStatus =
+                    state.statusMessage != null && state.statusMessage != disconnectedLabel
+                if (shouldShowStatus) {
                     Text(
-                        text = message,
+                        text = state.statusMessage.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PublicServerPickerSheet(
+    pickerState: PublicServerPickerState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSelect: (PublicServer) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        PublicServerPickerContent(
+            pickerState = pickerState,
+            onDismiss = onDismiss,
+            onRefresh = onRefresh,
+            onQueryChange = onQueryChange,
+            onSelect = onSelect
+        )
+    }
+}
+
+@Composable
+private fun PublicServerPickerContent(
+    pickerState: PublicServerPickerState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSelect: (PublicServer) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .heightIn(min = 0.dp, max = 560.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RdsLabelText(
+                text = stringResource(id = R.string.server_picker_title),
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onRefresh, enabled = !pickerState.isLoading) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = stringResource(id = R.string.server_picker_refresh)
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = stringResource(id = R.string.server_picker_close)
+                )
+            }
+        }
+        OutlinedTextField(
+            value = pickerState.query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(text = stringResource(id = R.string.server_picker_search_label)) },
+            placeholder = { Text(text = stringResource(id = R.string.server_picker_search_hint)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = stringResource(id = R.string.server_picker_search_label)
+                )
+            },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search,
+                keyboardType = KeyboardType.Text
+            ),
+            keyboardActions = KeyboardActions(onSearch = { /* handled via query binding */ })
+        )
+        if (pickerState.isLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        val errorMessage = pickerState.errorMessage
+        when {
+            errorMessage != null -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.server_picker_error_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(onClick = onRefresh) {
+                            Text(text = stringResource(id = R.string.server_picker_retry))
+                        }
+                    }
+                }
+            }
+
+            pickerState.filteredServers.isEmpty() -> {
+                val emptyLabel = if (pickerState.query.isBlank()) {
+                    stringResource(id = R.string.server_picker_empty_no_query)
+                } else {
+                    stringResource(
+                        id = R.string.server_picker_empty_with_query,
+                        pickerState.query
+                    )
+                }
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = emptyLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(onClick = onRefresh) {
+                            Text(text = stringResource(id = R.string.server_picker_refresh))
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(pickerState.filteredServers, key = { it.url }) { server ->
+                        PublicServerCard(
+                            server = server,
+                            onSelect = onSelect
+                        )
+                    }
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PublicServerCard(
+    server: PublicServer,
+    onSelect: (PublicServer) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        onClick = { onSelect(server) }
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = server.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                PublicServerStatusChip(isOnline = server.isOnline)
+            }
+            server.displayLocation?.let { location ->
+                Text(
+                    text = location,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            val tunerDetails = listOfNotNull(
+                server.tuner,
+                server.version?.takeIf { it.isNotBlank() }
+            ).takeIf { it.isNotEmpty() }?.joinToString(separator = " • ")
+            tunerDetails?.let { details ->
+                Text(
+                    text = details,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            val audioDetails = buildList {
+                server.audioQuality?.let { add(it) }
+                server.audioChannels?.let {
+                    add(
+                        stringResource(
+                            id = R.string.server_picker_audio_channels,
+                            it
+                        )
+                    )
+                }
+                server.bandwidthLimit?.let { add(it) }
+            }.takeIf { it.isNotEmpty() }?.joinToString(separator = " • ")
+            audioDetails?.let { details ->
+                Text(
+                    text = details,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            server.description?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            TextButton(
+                onClick = { onSelect(server) },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(text = stringResource(id = R.string.server_picker_select))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PublicServerStatusChip(isOnline: Boolean, modifier: Modifier = Modifier) {
+    val label = if (isOnline) {
+        stringResource(id = R.string.server_picker_status_online)
+    } else {
+        stringResource(id = R.string.server_picker_status_offline)
+    }
+    val containerColor = if (isOnline) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+    }
+    val contentColor = if (isOnline) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+    Box(
+        modifier = modifier
+            .background(containerColor, shape = CircleShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PublicServerCardPreview() {
+    FmDxTheme {
+        Surface {
+            PublicServerCard(server = PublicServer.sample(), onSelect = {})
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PublicServerPickerContentPreview() {
+    val servers = List(3) { index ->
+        PublicServer.sample().copy(name = "Sample Server ${index + 1}")
+    }
+    FmDxTheme {
+        Surface {
+            PublicServerPickerContent(
+                pickerState = PublicServerPickerState(
+                    isVisible = true,
+                    servers = servers,
+                    filteredServers = servers
+                ),
+                onDismiss = {},
+                onRefresh = {},
+                onQueryChange = {},
+                onSelect = {}
+            )
         }
     }
 }
@@ -2432,7 +2787,12 @@ private fun MainScreenPreview() {
                 currentPty = { "10/Pop Music" },
                 antennaLabel = { state.previewAntennaLabel() },
                 onShowSettings = {},
-                onShowAbout = {}
+                onShowAbout = {},
+                onShowPublicServerPicker = {},
+                onHidePublicServerPicker = {},
+                onRefreshPublicServers = {},
+                onUpdatePublicServerQuery = {},
+                onSelectPublicServer = {}
             )
         }
     }
@@ -2596,7 +2956,8 @@ private fun ConnectionSectionPreview() {
                 state = previewUiState().copy(isConnected = false, isConnecting = false),
                 onUpdateUrl = {},
                 onConnect = {},
-                onDisconnect = {}
+                onDisconnect = {},
+                onShowPublicServerPicker = {}
             )
         }
     }

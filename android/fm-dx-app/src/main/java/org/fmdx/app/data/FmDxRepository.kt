@@ -15,6 +15,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.fmdx.app.BuildConfig
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
@@ -37,6 +38,8 @@ class FmDxRepository(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val logoCache = mutableMapOf<String, String?>()
+    private var publicServerCache: List<PublicServer> = emptyList()
+    private var publicServerCacheTimestamp: Long = 0L
     fun connectControl(
         baseUrl: String,
         userAgent: String,
@@ -220,6 +223,47 @@ class FmDxRepository(
         logDebug("findStationLogo(): no logo found, falling back to default")
         logoCache[cacheKey] = DEFAULT_LOGO_URL
         DEFAULT_LOGO_URL
+    }
+
+    suspend fun getPublicServers(
+        userAgent: String,
+        forceRefresh: Boolean = false
+    ): List<PublicServer> = withContext(ioDispatcher) {
+        val now = System.currentTimeMillis()
+        val age = now - publicServerCacheTimestamp
+        if (!forceRefresh && publicServerCache.isNotEmpty() && age in 0..PUBLIC_SERVER_CACHE_MS) {
+            logDebug("getPublicServers(): returning cached list (${publicServerCache.size}) age=${age}ms")
+            return@withContext publicServerCache
+        }
+        val fresh = fetchPublicServersFromNetwork(userAgent)
+        publicServerCache = fresh
+        publicServerCacheTimestamp = System.currentTimeMillis()
+        logDebug("getPublicServers(): fetched ${fresh.size} entries")
+        fresh
+    }
+
+    private fun fetchPublicServersFromNetwork(userAgent: String): List<PublicServer> {
+        val request = Request.Builder()
+            .url(PUBLIC_SERVER_LIST_URL)
+            .header("User-Agent", "$userAgent (servers)")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Failed to load server list (${response.code})")
+            }
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank()) return emptyList()
+            val root = JSONObject(body)
+            val dataset = root.optJSONArray("dataset") ?: JSONArray()
+            val servers = mutableListOf<PublicServer>()
+            for (i in 0 until dataset.length()) {
+                val entry = dataset.optJSONObject(i) ?: continue
+                val server = PublicServer.fromJson(entry) ?: continue
+                servers.add(server)
+            }
+            return servers
+        }
     }
 
     suspend fun measureServerLatency(baseUrl: String, userAgent: String): Long? =
@@ -529,6 +573,8 @@ class FmDxRepository(
         const val DEFAULT_LOGO_URL = "$REMOTE_LOGO_BASE/default-logo.png"
         private const val LOGO_PATH = "logos"
         private val LOGO_SANITIZE_REGEX = Regex("[/\\-*+:.,§%&\"!?|><=)(\\[\\]´`'~#\\s]")
+        private const val PUBLIC_SERVER_LIST_URL = "https://servers.fmdx.org/api/"
+        private const val PUBLIC_SERVER_CACHE_MS = 5 * 60 * 1000L
     }
 
     private fun logDebug(message: String, throwable: Throwable? = null) {

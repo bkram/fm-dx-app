@@ -12,8 +12,8 @@ android {
         applicationId = 'org.fmdx.app'
         minSdk = 29
         targetSdk = 36
-        versionCode = 10600
-        versionName = "1.6.0"
+        versionCode = 10605
+        versionName = "1.6.5"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -92,6 +92,7 @@ dependencies {
     implementation 'androidx.media3:media3-session:1.8.0'
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
 }
 
 tasks.register("printVersion") {

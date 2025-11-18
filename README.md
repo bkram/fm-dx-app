@@ -8,16 +8,18 @@ custom security provider.
 
 ## Overview
 - Configure and persist the server URL directly from the UI.
-- Stream audio via the `/audio` WebSocket with ExoPlayer while reading live tuner state.
+- Stream audio via the `/audio` WebSocket.
 - Toggle iMS/EQ, cycle antennas, and adjust frequency with 10 kHz resolution.
 - Inspect real-time signal levels (dBf, dBµV, dBm), RDS/RadioText, and transmitter metadata.
 - Visualise spectrum data from the Spectrum Graph plugin and trigger scans when available.
 - Monitor connected user counts and live latency on the Server tab to spot congestion issues.
-- Mirror tuner telemetry to the TEF Logger desktop app via the built-in pass-through option.
+- Mirror tuner telemetry to the TEF Logger app via the built-in pass-through option.
+- Browse the curated public FM-DX server list from `servers.fmdx.org` and connect without typing
+  URLs.
 
 ## Prerequisites
 
-This app talks to an [FM-DX Webserver](https://github.com/NoobishSVK/fm-dx-webserver). To see the
+This app talks to a [FM-DX Webserver](https://github.com/NoobishSVK/fm-dx-webserver). To see the
 full UI (logos and spectrum graph) make sure the
 remote server has the following plugins installed and enabled:
 
@@ -73,12 +75,13 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
 
 ## Configuration
 
-- On first launch, enter the [`fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver) base
-  URL (e.g. `https://radio-host:8080/`). The app
-  normalises the URL and establishes both control and plugin WebSocket connections.
-- Audio playback falls back to the WebSocket MP3 stream (`{"type":"fallback","data":"mp3"}`) exposed
-  by the server.
-- Spectrum scanning mirrors the behaviour of the desktop client and requires the Spectrum Graph
+- On first launch, either enter the [
+  `fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver)
+  base URL (e.g. `https://radio-host:8080/`) or tap **Browse public servers** to pick a curated
+  host.
+  The app normalises the URL and establishes both control and plugin WebSocket connections.
+- Audio playback exposed by the server.
+- Spectrum scanning mirrors the behaviour of the FM-DX Webserver and requires the Spectrum Graph
   plugin on the server.
 - The Server card surfaces diagnostics (user count, round-trip latency) once connected so you can
   confirm the host’s health before tuning.
