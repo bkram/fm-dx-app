@@ -13,6 +13,11 @@
   in new UI toolkits without approval.
 - Honor the existing style guide: reuse established typography, colors, spacing, and component
   patterns unless product explicitly requests a deviation.
+- Status/metric headers (e.g., `RdsLabelText`, server info rows such as “Connected users” or
+  “Latency”)
+  must use the theme’s primary color (`MaterialTheme.colorScheme.primary`), while body text under
+  the
+  header stays on-surface/on-surfaceVariant, so new diagnostics match the existing spec.
 - Keep the UI modern and Compose-first: add or update composables with previews where practical so
   layouts stay testable, and avoid touching the audio playback stack unless a task explicitly calls
   for it.

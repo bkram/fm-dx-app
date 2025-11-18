@@ -12,6 +12,8 @@ custom security provider.
 - Toggle iMS/EQ, cycle antennas, and adjust frequency with 10 kHz resolution.
 - Inspect real-time signal levels (dBf, dBµV, dBm), RDS/RadioText, and transmitter metadata.
 - Visualise spectrum data from the Spectrum Graph plugin and trigger scans when available.
+- Monitor connected user counts and live latency on the Server tab to spot congestion issues.
+- Mirror tuner telemetry to the TEF Logger desktop app via the built-in pass-through option.
 
 ## Prerequisites
 
@@ -78,6 +80,10 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
   by the server.
 - Spectrum scanning mirrors the behaviour of the desktop client and requires the Spectrum Graph
   plugin on the server.
+- The Server card surfaces diagnostics (user count, round-trip latency) once connected so you can
+  confirm the host’s health before tuning.
+- Enable **TEF Logger** in Settings to stream UDP telemetry to the TEF Logger Android app (running
+  on the same device) while the tuner is connected.
 
 ## Testing
 - Run JVM unit tests with:

@@ -1,20 +1,5 @@
 # Roadmap
 
-## 1.5.5 – Help & Onboarding Tab
-
-- **Feature goals**: introduce a Help tab that provides quick-start documentation, explaining how to
-  connect, tune, and troubleshoot—geared toward first-time users.
-- **Technical steps**
-    - Add a new tab entry in `SectionTab` (likely after About) with its own composable (e.g.,
-      `HelpSection`) that displays structured content (cards/accordions) following the Material 3
-      design already used.
-    - Draft the help copy (sections like “Getting connected”, “Tuning & audio”, “Common issues”) in
-      `strings.xml`, keeping text concise and localizable; provide previews so designers can review
-      without running the app.
-    - Consider embedding contextual actions (open website, contact support) via deep links and
-      ensure accessibility (heading semantics, TalkBack-friendly ordering).
-    - Add screenshot/regression tests if feasible (Compose screenshot tests) or unit tests
-      validating that the Help tab renders even when the app is offline.
 
 ## 1.6 – Enhanced Server Diagnostics
 
@@ -32,7 +17,11 @@
     - Add analytics/logging hooks so regressions can be monitored, and document the new output in
       `README.md`.
 
-## 1.6.5 – Audio Recording
+## 1.6.5 Server connect
+
+Connect to any of the public servers listed om maps.fmdx.org.
+
+## 1.7.0 – Audio Recording
 
 - **Feature goals**: allow users to record the currently tuned audio stream for later
   playback/export.
@@ -47,7 +36,7 @@
     - Add instrumentation/unit tests covering the recording pipeline (buffer boundaries, error
       cases), and ensure background recording behaves correctly when tuning or disconnecting.
 
-## 1.7 – QR-Based Quick Connect
+## 1.8 – QR-Based Quick Connect
 
 - **Feature goals**: let users scan a QR in the system camera app and deep-link directly into FM DX
   with the embedded server URL; no in-app scanner.

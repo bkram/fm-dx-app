@@ -222,6 +222,30 @@ class FmDxRepository(
         DEFAULT_LOGO_URL
     }
 
+    suspend fun measureServerLatency(baseUrl: String, userAgent: String): Long? =
+        withContext(ioDispatcher) {
+            val httpUrl = baseUrl.toHttpUrlOrNull() ?: return@withContext null
+            val pingUrl = httpUrl.newBuilder()
+                .addPathSegment("ping")
+                .build()
+            val request = Request.Builder()
+                .url(pingUrl)
+                .header("User-Agent", "$userAgent (latency)")
+                .header("Accept", "*/*")
+                .build()
+            val startNs = System.nanoTime()
+            return@withContext try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val elapsedMs = (System.nanoTime() - startNs) / 1_000_000
+                    elapsedMs.takeIf { it >= 0 }
+                }
+            } catch (ex: Exception) {
+                logDebug("measureServerLatency(): failed for $pingUrl", ex)
+                null
+            }
+        }
+
     private fun findRemoteLogo(
         countryCode: String,
         piCode: String,

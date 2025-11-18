@@ -99,7 +99,12 @@
     <string name="server_info_title">Serverinformatie</string>
     <string name="server_info_tuner_name">%1$s</string>
     <string name="server_info_unavailable">Geen servergegevens beschikbaar.</string>
-    <string name="about_message">FM-DX App is een open-source Android-client voor fm-dx-webservers.</string>
+    <string name="server_info_users">Verbonden gebruikers</string>
+    <string name="server_info_users_unknown">--</string>
+    <string name="server_info_latency">Latentie</string>
+    <string name="server_info_latency_value">%1$d ms</string>
+    <string name="server_info_latency_unknown">--</string>
+    <string name="about_message">FM-DX App is een open-source Android-client voor FM-DX webservers.</string>
     <string name="about_github_url">https://github.com/bkram/fm-dx-app</string>
     <string name="about_site_link">Bezoek fmdx.org</string>
     <string name="about_site_url">https://fmdx.org/</string>

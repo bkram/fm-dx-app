@@ -843,13 +843,21 @@ private fun ServerSection(
             }
         }
         if (state.isConnected) {
-            ServerInfoCard(tunerInfo = state.tunerInfo)
+            ServerInfoCard(
+                tunerInfo = state.tunerInfo,
+                users = state.tunerState?.users,
+                latencyMs = state.serverLatencyMs
+            )
         }
     }
 }
 
 @Composable
-private fun ServerInfoCard(tunerInfo: TunerInfo?) {
+private fun ServerInfoCard(
+    tunerInfo: TunerInfo?,
+    users: Int?,
+    latencyMs: Double?
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -875,8 +883,41 @@ private fun ServerInfoCard(tunerInfo: TunerInfo?) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+            ServerInfoMetricRow(
+                label = stringResource(id = R.string.server_info_users),
+                value = users?.toString() ?: stringResource(id = R.string.server_info_users_unknown)
+            )
+            val latencyValue = latencyMs?.let {
+                val rounded = it.roundToInt().coerceAtLeast(0)
+                stringResource(id = R.string.server_info_latency_value, rounded)
+            } ?: stringResource(id = R.string.server_info_latency_unknown)
+            ServerInfoMetricRow(
+                label = stringResource(id = R.string.server_info_latency),
+                value = latencyValue
+            )
         }
     }
+}
+
+@Composable
+private fun ServerInfoMetricRow(label: String, value: String) {
+    val headerStyle = SpanStyle(
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold
+    )
+    val valueStyle = SpanStyle(color = MaterialTheme.colorScheme.onSurface)
+    Text(
+        text = buildAnnotatedString {
+            withStyle(headerStyle) {
+                append(label)
+                append(": ")
+            }
+            withStyle(valueStyle) {
+                append(value)
+            }
+        },
+        style = MaterialTheme.typography.bodyMedium
+    )
 }
 
 @OptIn(FlowPreview::class)
@@ -2522,7 +2563,8 @@ private fun previewUiState(): UiState {
         isScanning = false,
         statusMessage = "Connected to ${tunerInfo.tunerName}",
         pendingFrequencyMHz = tunerState.freqMHz,
-        stationLogoUrl = "https://tef.noobish.eu/logos/HOL/800A.png"
+        stationLogoUrl = "https://tef.noobish.eu/logos/HOL/800A.png",
+        serverLatencyMs = 42.0
     )
 }
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.fmdx.app.audio.DEFAULT_NETWORK_BUFFER_CHUNKS
@@ -70,6 +71,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var commandJob: Job? = null
     private var spectrumScanFallbackJob: Job? = null
     private var stationLogoJob: Job? = null
+    private var latencyJob: Job? = null
     private var lastLogoKey: String? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.let { if (it.isDone) it.get() else null }
@@ -187,6 +189,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 startPluginConnection(sanitized)
                 scheduleLogoUpdate(sanitized, _uiState.value.tunerState)
                 refreshSpectrum(sanitized)
+                startLatencyMonitor(sanitized)
                 updatePassThroughServiceState()
             } catch (ex: Exception) {
                 logDebug("connect(): failed", ex)
@@ -209,6 +212,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pluginConnection = null
         commandJob?.cancel()
         commandJob = null
+        stopLatencyMonitor()
         spectrumScanFallbackJob?.cancel()
         spectrumScanFallbackJob = null
         stationLogoJob?.cancel()
@@ -375,6 +379,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    private fun startLatencyMonitor(baseUrl: String) {
+        latencyJob?.cancel()
+        latencyJob = viewModelScope.launch {
+            var ema = _uiState.value.serverLatencyMs
+            while (isActive) {
+                val latency = repository.measureServerLatency(baseUrl, BuildConfig.USER_AGENT)
+                if (latency != null) {
+                    val measurement = latency.toDouble()
+                    ema =
+                        ema?.let { LATENCY_EMA_ALPHA * measurement + (1 - LATENCY_EMA_ALPHA) * it }
+                            ?: measurement
+                    _uiState.update { it.copy(serverLatencyMs = ema) }
+                }
+                delay(LATENCY_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopLatencyMonitor() {
+        latencyJob?.cancel()
+        latencyJob = null
+        _uiState.update { it.copy(serverLatencyMs = null) }
     }
 
     private fun startControlConnection(url: String) {
@@ -621,6 +649,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
         private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE =
             "Spectrum data unavailable on this server."
+        private const val LATENCY_POLL_INTERVAL_MS = 15_000L
+        private const val LATENCY_EMA_ALPHA = 0.3
         const val DEFAULT_LOGO_URL = FmDxRepository.DEFAULT_LOGO_URL
 
         fun baselineSpectrum(): List<SpectrumPoint> {
@@ -760,5 +790,6 @@ data class UiState(
     val passThroughEnabled: Boolean = false,
     val statusMessage: String? = null,
     val pendingFrequencyMHz: Double? = null,
-    val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL
+    val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL,
+    val serverLatencyMs: Double? = null
 )
