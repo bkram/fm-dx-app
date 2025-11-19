@@ -15,6 +15,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.fmdx.app.BuildConfig
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
@@ -37,6 +38,8 @@ class FmDxRepository(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val logoCache = mutableMapOf<String, String?>()
+    private var publicServerCache: List<PublicServer> = emptyList()
+    private var publicServerCacheTimestamp: Long = 0L
     fun connectControl(
         baseUrl: String,
         userAgent: String,
@@ -102,6 +105,7 @@ class FmDxRepository(
         baseUrl: String,
         userAgent: String,
         onEvent: (SpectrumPluginEvent) -> Unit,
+        onTelemetryEvent: (PluginTelemetryEvent) -> Unit = {},
         onError: (Throwable) -> Unit
     ): PluginConnection {
         val wsUrl = buildWebSocketUrl(baseUrl, "data_plugins")
@@ -119,6 +123,7 @@ class FmDxRepository(
                 logDebug("plugin socket: message length=${text.length}")
                 try {
                     val json = JSONObject(text)
+                    handleTelemetryMessage(json, onTelemetryEvent)
                     val payload = json.optJSONObject("value") ?: json
                     val status = payload.optString("status").takeIf { it.isNotBlank() }
                     val points = parseSpectrumDataset(payload)
@@ -133,6 +138,34 @@ class FmDxRepository(
             }
         })
         return PluginConnection(webSocket)
+    }
+
+    private fun handleTelemetryMessage(
+        json: JSONObject,
+        onTelemetryEvent: (PluginTelemetryEvent) -> Unit
+    ) {
+        val type = json.optString("type").takeIf { it.isNotBlank() } ?: return
+        val value = json.optJSONObject("value") ?: return
+        when (type.lowercase(Locale.ROOT)) {
+            "scanner" -> {
+                val status = value.optString("status").takeIf { it.isNotBlank() }
+                val scanValue = value.optString("Scan").takeIf { it.isNotBlank() }
+                if (status != null || scanValue != null) {
+                    onTelemetryEvent(PluginTelemetryEvent.Scanner(status, scanValue))
+                }
+            }
+
+            "gps" -> {
+                val status = value.optString("status").takeIf { it.isNotBlank() }
+                val lat = value.optString("lat").takeIf { it.isNotBlank() }
+                val lon = value.optString("lon").takeIf { it.isNotBlank() }
+                val alt = value.optString("alt").takeIf { it.isNotBlank() }
+                val mode = value.optString("mode").takeIf { it.isNotBlank() }
+                if (status != null || lat != null || lon != null) {
+                    onTelemetryEvent(PluginTelemetryEvent.Gps(status, lat, lon, alt, mode))
+                }
+            }
+        }
     }
 
     suspend fun findStationLogo(
@@ -192,6 +225,71 @@ class FmDxRepository(
         DEFAULT_LOGO_URL
     }
 
+    suspend fun getPublicServers(
+        userAgent: String,
+        forceRefresh: Boolean = false
+    ): List<PublicServer> = withContext(ioDispatcher) {
+        val now = System.currentTimeMillis()
+        val age = now - publicServerCacheTimestamp
+        if (!forceRefresh && publicServerCache.isNotEmpty() && age in 0..PUBLIC_SERVER_CACHE_MS) {
+            logDebug("getPublicServers(): returning cached list (${publicServerCache.size}) age=${age}ms")
+            return@withContext publicServerCache
+        }
+        val fresh = fetchPublicServersFromNetwork(userAgent)
+        publicServerCache = fresh
+        publicServerCacheTimestamp = System.currentTimeMillis()
+        logDebug("getPublicServers(): fetched ${fresh.size} entries")
+        fresh
+    }
+
+    private fun fetchPublicServersFromNetwork(userAgent: String): List<PublicServer> {
+        val request = Request.Builder()
+            .url(PUBLIC_SERVER_LIST_URL)
+            .header("User-Agent", "$userAgent (servers)")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Failed to load server list (${response.code})")
+            }
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank()) return emptyList()
+            val root = JSONObject(body)
+            val dataset = root.optJSONArray("dataset") ?: JSONArray()
+            val servers = mutableListOf<PublicServer>()
+            for (i in 0 until dataset.length()) {
+                val entry = dataset.optJSONObject(i) ?: continue
+                val server = PublicServer.fromJson(entry) ?: continue
+                servers.add(server)
+            }
+            return servers
+        }
+    }
+
+    suspend fun measureServerLatency(baseUrl: String, userAgent: String): Long? =
+        withContext(ioDispatcher) {
+            val httpUrl = baseUrl.toHttpUrlOrNull() ?: return@withContext null
+            val pingUrl = httpUrl.newBuilder()
+                .addPathSegment("ping")
+                .build()
+            val request = Request.Builder()
+                .url(pingUrl)
+                .header("User-Agent", "$userAgent (latency)")
+                .header("Accept", "*/*")
+                .build()
+            val startNs = System.nanoTime()
+            return@withContext try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val elapsedMs = (System.nanoTime() - startNs) / 1_000_000
+                    elapsedMs.takeIf { it >= 0 }
+                }
+            } catch (ex: Exception) {
+                logDebug("measureServerLatency(): failed for $pingUrl", ex)
+                null
+            }
+        }
+
     private fun findRemoteLogo(
         countryCode: String,
         piCode: String,
@@ -204,14 +302,15 @@ class FmDxRepository(
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                val body = response.body?.string() ?: return null
+                val body = response.body.string()
+                if (body.isBlank()) return null
                 val document = Jsoup.parse(body)
                 val folderElement = document.select(".folder").firstOrNull { element ->
                     element.text().trim().endsWith("./$countryCode")
                 } ?: return null
                 val fileContainer = folderElement.nextElementSibling() ?: return null
                 val available = fileContainer.select(".file a")
-                    .mapNotNull { it.text()?.trim() }
+                    .mapNotNull { it.text().trim().takeIf { text -> text.isNotEmpty() } }
                     .toSet()
                 val priority = buildList {
                     if (sanitizedProgram != null) {
@@ -267,8 +366,8 @@ class FmDxRepository(
                         .build()
                 ).execute().use { response ->
                     if (response.isSuccessful) {
-                        val body = response.body?.string()
-                        if (!body.isNullOrBlank()) {
+                        val body = response.body.string()
+                        if (body.isNotBlank()) {
                             val json = JSONObject(body)
                             tunerName = json.optString("tunerName", tunerName)
                             tunerDesc = json.optString("tunerDesc", tunerDesc)
@@ -364,7 +463,8 @@ class FmDxRepository(
                     logDebug("fetchSpectrumData(): request failed code=${response.code}")
                     return@use null
                 }
-                val body = response.body?.string() ?: return@use null
+                val body = response.body.string()
+                if (body.isBlank()) return@use null
                 val json = JSONObject(body)
                 parseSpectrumDataset(json)
             }
@@ -377,9 +477,12 @@ class FmDxRepository(
         onError: (Throwable) -> Unit
     ) {
         logDebug("$socketName socket: failure code=${response?.code}", t)
+        if (t is EOFException) {
+            logDebug("$socketName socket: server closed connection; suppressing popup")
+            return
+        }
         val message = when (t) {
             is SocketException -> "Connection to server lost"
-            is EOFException -> "Connection closed by server"
             else -> t.message ?: "Unknown connection error"
         }
         onError(IOException(message, t))
@@ -470,6 +573,8 @@ class FmDxRepository(
         const val DEFAULT_LOGO_URL = "$REMOTE_LOGO_BASE/default-logo.png"
         private const val LOGO_PATH = "logos"
         private val LOGO_SANITIZE_REGEX = Regex("[/\\-*+:.,§%&\"!?|><=)(\\[\\]´`'~#\\s]")
+        private const val PUBLIC_SERVER_LIST_URL = "https://servers.fmdx.org/api/"
+        private const val PUBLIC_SERVER_CACHE_MS = 5 * 60 * 1000L
     }
 
     private fun logDebug(message: String, throwable: Throwable? = null) {

@@ -14,16 +14,21 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -36,9 +41,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,6 +65,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -66,8 +76,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -114,16 +126,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import com.seo4d696b75.compose.material3.picker.NumberPicker
+import com.seo4d696b75.compose.material3.picker.Picker
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
@@ -153,22 +168,29 @@ internal fun FmDxApp(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onShowPublicServerPicker: () -> Unit,
+    onHidePublicServerPicker: () -> Unit,
+    onRefreshPublicServers: () -> Unit,
+    onUpdatePublicServerQuery: (String) -> Unit,
+    onSelectPublicServer: (PublicServer) -> Unit
 ) {
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showAbout by rememberSaveable { mutableStateOf(false) }
+    val showSettingsState = rememberSaveable { mutableStateOf(false) }
+    val showAboutState = rememberSaveable { mutableStateOf(false) }
+    val showSettings by showSettingsState
+    val showAbout by showAboutState
 
     when {
         showSettings -> {
             SettingsScreen(
                 state = state,
                 onUpdateSettings = onUpdateSettings,
-                onBack = { }
+                onBack = { showSettingsState.value = false }
             )
         }
 
         showAbout -> {
-            AboutScreen(onBack = { })
+            AboutScreen(onBack = { showAboutState.value = false })
         }
 
         else -> {
@@ -188,10 +210,13 @@ internal fun FmDxApp(
                 formatSignal = formatSignal,
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
-                onShowSettings = {
-                },
-                onShowAbout = {
-                }
+                onShowSettings = { showSettingsState.value = true },
+                onShowAbout = { showAboutState.value = true },
+                onShowPublicServerPicker = onShowPublicServerPicker,
+                onHidePublicServerPicker = onHidePublicServerPicker,
+                onRefreshPublicServers = onRefreshPublicServers,
+                onUpdatePublicServerQuery = onUpdatePublicServerQuery,
+                onSelectPublicServer = onSelectPublicServer
             )
         }
     }
@@ -216,19 +241,49 @@ private fun MainScreen(
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
     onShowSettings: () -> Unit,
-    onShowAbout: () -> Unit
+    onShowAbout: () -> Unit,
+    onShowPublicServerPicker: () -> Unit,
+    onHidePublicServerPicker: () -> Unit,
+    onRefreshPublicServers: () -> Unit,
+    onUpdatePublicServerQuery: (String) -> Unit,
+    onSelectPublicServer: (PublicServer) -> Unit
 ) {
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     val tabs = buildList {
-        add(SectionTab(R.string.server) {
-            ServerSection(
-                state,
-                onUpdateUrl,
-                onConnect,
-                onDisconnect
+        add(
+            SectionTab(
+                titleRes = R.string.connection_tab_title,
+                scrollable = false,
+                requiresConnection = false
+            ) {
+                ConnectionSection(
+                    state = state,
+                    onUpdateUrl = onUpdateUrl,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    onShowPublicServerPicker = onShowPublicServerPicker
+                )
+            }
+        )
+        if (state.isConnected) {
+            add(
+                SectionTab(
+                    titleRes = R.string.server_info_tab_title,
+                    scrollable = false,
+                    requiresConnection = true
+                ) { ServerInfoSection(state) }
             )
-        })
+        }
+        if (!state.isConnected) {
+            add(
+                SectionTab(
+                    titleRes = R.string.help_tab_title,
+                    scrollable = false,
+                    requiresConnection = false
+                ) { HelpSection() }
+            )
+        }
         if (state.isConnected) {
             add(SectionTab(R.string.tuner) {
                 TunerSection(
@@ -244,16 +299,18 @@ private fun MainScreen(
                 )
             })
             add(SectionTab(R.string.rds) { InformationSection(state, currentPty) })
-            add(
-                SectionTab(R.string.spectrum) {
-                    SpectrumSection(
-                        state = state,
-                        onScan = onScan,
-                        onTuneDirect = onTuneDirect,
-                        onDragStateChange = { dragging -> isSpectrumDragging = dragging }
-                    )
-                }
-            )
+            if (state.isSpectrumAvailable) {
+                add(
+                    SectionTab(R.string.spectrum) {
+                        SpectrumSection(
+                            state = state,
+                            onScan = onScan,
+                            onTuneDirect = onTuneDirect,
+                            onDragStateChange = { dragging -> isSpectrumDragging = dragging }
+                        )
+                    }
+                )
+            }
         }
     }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
@@ -358,7 +415,7 @@ private fun MainScreen(
                             }
                         },
                         text = { Text(text = stringResource(id = tab.titleRes)) },
-                        enabled = index == 0 || state.isConnected
+                        enabled = !tab.requiresConnection || state.isConnected
                     )
                 }
             }
@@ -377,18 +434,36 @@ private fun MainScreen(
                             .padding(16.dp)
                     ) {
                         val scrollState = rememberScrollState()
+                        val tab = tabs.getOrNull(page)
+                        val contentModifier = Modifier
+                            .fillMaxWidth()
+                            .let { base ->
+                                if (tab?.scrollable != false) {
+                                    base.verticalScroll(scrollState)
+                                } else {
+                                    base
+                                }
+                            }
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(scrollState),
+                            modifier = contentModifier,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            tabs.getOrNull(page)?.content?.invoke()
+                            tab?.content?.invoke()
                         }
                     }
                 }
             }
         }
+    }
+
+    if (state.publicServerPickerState.isVisible) {
+        PublicServerPickerSheet(
+            pickerState = state.publicServerPickerState,
+            onDismiss = onHidePublicServerPicker,
+            onRefresh = onRefreshPublicServers,
+            onQueryChange = onUpdatePublicServerQuery,
+            onSelect = onSelectPublicServer
+        )
     }
 }
 
@@ -396,7 +471,7 @@ private fun MainScreen(
 @Composable
 private fun SettingsScreen(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -441,6 +516,8 @@ private fun AboutScreen(onBack: () -> Unit) {
     val fmdxOrgSiteUrl = stringResource(id = R.string.about_site_url)
     val fmdxWebServerUrl = stringResource(id = R.string.about_fmdxwebserver_url)
     val fmdxWebServerLabel = stringResource(id = R.string.about_fmdxwebserver_title)
+    val tefLoggerLabel = stringResource(id = R.string.about_teflogger_title)
+    val tefLoggerUrl = stringResource(id = R.string.about_teflogger_url)
     val versionName = BuildConfig.VERSION_NAME
     val versionCode = BuildConfig.VERSION_CODE
     val versionLabel = stringResource(id = R.string.about_version, versionName, versionCode)
@@ -538,6 +615,20 @@ private fun AboutScreen(onBack: () -> Unit) {
                             .fillMaxWidth()
                             .clickable { uriHandler.openUri(fmdxWebServerUrl) }
                     )
+                    ListItem(
+                        headlineContent = { Text(text = tefLoggerLabel) },
+                        supportingContent = { Text(text = tefLoggerUrl) },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(tefLoggerUrl) }
+                    )
                     HorizontalDivider()
                     ListItem(
                         headlineContent = { Text(text = fmdxOrgSiteLabel) },
@@ -566,7 +657,87 @@ internal fun clampTabIndex(currentPage: Int, tabCount: Int): Int {
 
 private data class SectionTab(
     @param:StringRes val titleRes: Int,
+    val scrollable: Boolean = true,
+    val requiresConnection: Boolean = true,
     val content: @Composable () -> Unit
+)
+
+@Composable
+private fun HelpSection() {
+    val uriHandler = LocalUriHandler.current
+    val helpItems = listOf(
+        HelpItem(
+            title = stringResource(id = R.string.help_getting_started_title),
+            description = stringResource(id = R.string.help_getting_started_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_tuning_title),
+            description = stringResource(id = R.string.help_tuning_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_troubleshooting_title),
+            description = stringResource(id = R.string.help_troubleshooting_description)
+        ),
+        HelpItem(
+            title = stringResource(id = R.string.help_more_support_title),
+            description = stringResource(id = R.string.help_more_support_description),
+            linkText = stringResource(id = R.string.help_more_support_link),
+            linkUrl = stringResource(id = R.string.help_discord_url)
+        )
+    )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(helpItems) { item ->
+            HelpCard(
+                title = item.title,
+                description = item.description,
+                linkText = item.linkText,
+                onLinkClick = item.linkUrl?.let { url ->
+                    { uriHandler.openUri(url) }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HelpCard(
+    title: String,
+    description: String,
+    linkText: String? = null,
+    onLinkClick: (() -> Unit)? = null
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (linkText != null && onLinkClick != null) {
+                TextButton(onClick = onLinkClick) {
+                    Text(text = linkText)
+                }
+            }
+        }
+    }
+}
+
+private data class HelpItem(
+    val title: String,
+    val description: String,
+    val linkText: String? = null,
+    val linkUrl: String? = null
 )
 
 private data class RdsFlagUi(
@@ -620,11 +791,12 @@ private fun ConnectionStatusIndicator(
 }
 
 @Composable
-private fun ServerSection(
+private fun ConnectionSection(
     state: UiState,
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onShowPublicServerPicker: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
     val connectAndDismissKeyboard = {
@@ -691,6 +863,13 @@ private fun ServerSection(
                         }
                     }
                 }
+
+                FilledTonalButton(
+                    onClick = onShowPublicServerPicker,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.browse_public_servers))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.isConnected) {
                         OutlinedButton(onClick = onConnect, enabled = false) {
@@ -714,23 +893,334 @@ private fun ServerSection(
                 if (state.isConnecting) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
-                state.statusMessage?.let { message ->
+                val disconnectedLabel = stringResource(id = R.string.disconnected)
+                val shouldShowStatus =
+                    state.statusMessage != null && state.statusMessage != disconnectedLabel
+                if (shouldShowStatus) {
                     Text(
-                        text = message,
+                        text = state.statusMessage.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
-        if (state.isConnected) {
-            ServerInfoCard(tunerInfo = state.tunerInfo)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PublicServerPickerSheet(
+    pickerState: PublicServerPickerState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSelect: (PublicServer) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        PublicServerPickerContent(
+            pickerState = pickerState,
+            onDismiss = onDismiss,
+            onRefresh = onRefresh,
+            onQueryChange = onQueryChange,
+            onSelect = onSelect
+        )
+    }
+}
+
+@Composable
+private fun PublicServerPickerContent(
+    pickerState: PublicServerPickerState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSelect: (PublicServer) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .heightIn(min = 0.dp, max = 560.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RdsLabelText(
+                text = stringResource(id = R.string.server_picker_title),
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onRefresh, enabled = !pickerState.isLoading) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = stringResource(id = R.string.server_picker_refresh)
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = stringResource(id = R.string.server_picker_close)
+                )
+            }
+        }
+        OutlinedTextField(
+            value = pickerState.query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(text = stringResource(id = R.string.server_picker_search_label)) },
+            placeholder = { Text(text = stringResource(id = R.string.server_picker_search_hint)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = stringResource(id = R.string.server_picker_search_label)
+                )
+            },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search,
+                keyboardType = KeyboardType.Text
+            ),
+            keyboardActions = KeyboardActions(onSearch = { /* handled via query binding */ })
+        )
+        if (pickerState.isLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        val errorMessage = pickerState.errorMessage
+        when {
+            errorMessage != null -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.server_picker_error_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(onClick = onRefresh) {
+                            Text(text = stringResource(id = R.string.server_picker_retry))
+                        }
+                    }
+                }
+            }
+
+            pickerState.filteredServers.isEmpty() -> {
+                val emptyLabel = if (pickerState.query.isBlank()) {
+                    stringResource(id = R.string.server_picker_empty_no_query)
+                } else {
+                    stringResource(
+                        id = R.string.server_picker_empty_with_query,
+                        pickerState.query
+                    )
+                }
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = emptyLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(onClick = onRefresh) {
+                            Text(text = stringResource(id = R.string.server_picker_refresh))
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(pickerState.filteredServers, key = { it.url }) { server ->
+                        PublicServerCard(
+                            server = server,
+                            onSelect = onSelect
+                        )
+                    }
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ServerInfoCard(tunerInfo: TunerInfo?) {
+private fun PublicServerCard(
+    server: PublicServer,
+    onSelect: (PublicServer) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        onClick = { onSelect(server) }
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = server.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                PublicServerStatusChip(isOnline = server.isOnline)
+            }
+            server.displayLocation?.let { location ->
+                Text(
+                    text = location,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            val tunerDetails = listOfNotNull(
+                server.tuner,
+                server.version?.takeIf { it.isNotBlank() }
+            ).takeIf { it.isNotEmpty() }?.joinToString(separator = " • ")
+            tunerDetails?.let { details ->
+                Text(
+                    text = details,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            val audioDetails = buildList {
+                server.audioQuality?.let { add(it) }
+                server.audioChannels?.let {
+                    add(
+                        stringResource(
+                            id = R.string.server_picker_audio_channels,
+                            it
+                        )
+                    )
+                }
+                server.bandwidthLimit?.let { add(it) }
+            }.takeIf { it.isNotEmpty() }?.joinToString(separator = " • ")
+            audioDetails?.let { details ->
+                Text(
+                    text = details,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            server.description?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            TextButton(
+                onClick = { onSelect(server) },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(text = stringResource(id = R.string.server_picker_select))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PublicServerStatusChip(isOnline: Boolean, modifier: Modifier = Modifier) {
+    val label = if (isOnline) {
+        stringResource(id = R.string.server_picker_status_online)
+    } else {
+        stringResource(id = R.string.server_picker_status_offline)
+    }
+    val containerColor = if (isOnline) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+    }
+    val contentColor = if (isOnline) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+    Box(
+        modifier = modifier
+            .background(containerColor, shape = CircleShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PublicServerCardPreview() {
+    FmDxTheme {
+        Surface {
+            PublicServerCard(server = PublicServer.sample(), onSelect = {})
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PublicServerPickerContentPreview() {
+    val servers = List(3) { index ->
+        PublicServer.sample().copy(name = "Sample Server ${index + 1}")
+    }
+    FmDxTheme {
+        Surface {
+            PublicServerPickerContent(
+                pickerState = PublicServerPickerState(
+                    isVisible = true,
+                    servers = servers,
+                    filteredServers = servers
+                ),
+                onDismiss = {},
+                onRefresh = {},
+                onQueryChange = {},
+                onSelect = {}
+            )
+        }
+    }
+}
+
+@Composable
+private fun ServerInfoCard(
+    tunerInfo: TunerInfo?,
+    users: Int?,
+    latencyMs: Double?
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -756,8 +1246,52 @@ private fun ServerInfoCard(tunerInfo: TunerInfo?) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+            ServerInfoMetricRow(
+                label = stringResource(id = R.string.server_info_users),
+                value = users?.toString() ?: stringResource(id = R.string.server_info_users_unknown)
+            )
+            val latencyValue = latencyMs?.let {
+                val rounded = it.roundToInt().coerceAtLeast(0)
+                stringResource(id = R.string.server_info_latency_value, rounded)
+            } ?: stringResource(id = R.string.server_info_latency_unknown)
+            ServerInfoMetricRow(
+                label = stringResource(id = R.string.server_info_latency),
+                value = latencyValue
+            )
         }
     }
+}
+
+@Composable
+private fun ServerInfoSection(state: UiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ServerInfoCard(
+            tunerInfo = state.tunerInfo,
+            users = state.tunerState?.users,
+            latencyMs = state.serverLatencyMs
+        )
+    }
+}
+
+@Composable
+private fun ServerInfoMetricRow(label: String, value: String) {
+    val headerStyle = SpanStyle(
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold
+    )
+    val valueStyle = SpanStyle(color = MaterialTheme.colorScheme.onSurface)
+    Text(
+        text = buildAnnotatedString {
+            withStyle(headerStyle) {
+                append(label)
+                append(": ")
+            }
+            withStyle(valueStyle) {
+                append(value)
+            }
+        },
+        style = MaterialTheme.typography.bodyMedium
+    )
 }
 
 @OptIn(FlowPreview::class)
@@ -871,6 +1405,16 @@ private fun FrequencyControlsCard(
     val maxDecimalIndexForSelectedMhz = maxDecimalIndexFor(selectedMHz)
 
     val isControlReady = state.isConnected
+    val decimalPickerItems = remember(decimalRangeSize, decimalSteps, stepKHz) {
+        decimalRange.map { position ->
+            val wrapped = wrappedDecimalIndex(position)
+            val displayValue = decimalDisplayValues.getOrElse(wrapped) { wrapped }
+            val displayText = displayValue.toString().padStart(2, '0')
+            DecimalPickerLabel(position, displayValue, displayText)
+        }.toPersistentList()
+    }
+    val decimalPickerIndex = (decimalPickerPosition - decimalRange.first)
+        .coerceIn(0, decimalPickerItems.lastIndex.coerceAtLeast(0))
 
     LaunchedEffect(minMhz, maxMhz) {
         val clampedMhz = selectedMHz.coerceIn(minMhz, maxMhz)
@@ -895,6 +1439,39 @@ private fun FrequencyControlsCard(
         if (!isUserInteracting) {
             decimalPickerPosition = anchorPositionFor(clampedIndex)
         }
+    }
+
+    fun handleDecimalPickerChange(newPosition: Int) {
+        val boundedPosition = newPosition
+            .coerceIn(decimalRange.first, decimalRange.last)
+            .coerceAtMost(decimalPickerItems.lastIndex.coerceAtLeast(0))
+        val previousPosition = decimalPickerPosition
+        if (boundedPosition == previousPosition) return
+        decimalPickerPosition = boundedPosition
+        if (!isControlReady || decimalSteps <= 1) {
+            isUserInteracting = true
+            return
+        }
+        val deltaSteps = boundedPosition - previousPosition
+        val currentKHz = (selectedMHz * 1000) + (selectedDecimalIndex * stepKHz)
+        val targetKHz = (currentKHz + deltaSteps * stepKHz).coerceIn(minKHz, maxKHz)
+        val nextMhz = (targetKHz / 1000).coerceIn(minMhz, maxMhz)
+        val rawDecimalIndex = ((targetKHz % 1000) / stepKHz)
+        val nextDecimal = rawDecimalIndex.coerceIn(
+            minDecimalIndexFor(nextMhz),
+            maxDecimalIndexFor(nextMhz)
+        )
+        if (nextMhz != selectedMHz) {
+            selectedMHz = nextMhz
+        }
+        if (nextDecimal != selectedDecimalIndex) {
+            selectedDecimalIndex = nextDecimal
+        }
+        val anchored = alignPickerPositionToIndex(boundedPosition, nextDecimal)
+        if (anchored != decimalPickerPosition) {
+            decimalPickerPosition = anchored
+        }
+        isUserInteracting = true
     }
 
     Column(
@@ -945,7 +1522,11 @@ private fun FrequencyControlsCard(
                         }
                         isUserInteracting = true
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isControlReady,
+                    labelStyle = pickerTextStyle,
+                    labelSize = DpSize(pickerWidth, pickerHeight / 3),
+                    dividerHeight = 2.dp
                 )
                 if (!isControlReady) {
                     DisabledOverlay()
@@ -956,21 +1537,6 @@ private fun FrequencyControlsCard(
                 style = pickerTextStyle,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
-            val decimalDisplayItems = remember(
-                selectedMHz,
-                minDecimalIndexForSelectedMhz,
-                maxDecimalIndexForSelectedMhz
-            ) {
-                (minDecimalIndexForSelectedMhz..maxDecimalIndexForSelectedMhz).map { index ->
-                    decimalDisplayValues.getOrElse(index) { index }
-                }.toPersistentList()
-            }
-            val decimalSelectedDisplayValue = decimalDisplayValues.getOrElse(
-                selectedDecimalIndex.coerceIn(
-                    minDecimalIndexForSelectedMhz,
-                    maxDecimalIndexForSelectedMhz
-                )
-            ) { 0 }
             Box(
                 modifier = Modifier
                     .width(pickerWidth)
@@ -978,21 +1544,18 @@ private fun FrequencyControlsCard(
                     .alpha(if (isControlReady) 1f else 0.4f),
                 contentAlignment = Center
             ) {
-                NumberPicker(
-                    value = decimalSelectedDisplayValue,
-                    range = decimalDisplayItems,
-                    onValueChange = { newDisplayValue ->
-                        if (!isControlReady) return@NumberPicker
-                        val normalizedIndex = ((newDisplayValue * 10) / stepKHz).coerceIn(
-                            minDecimalIndexForSelectedMhz,
-                            maxDecimalIndexForSelectedMhz
-                        )
-                        if (selectedDecimalIndex != normalizedIndex) {
-                            selectedDecimalIndex = normalizedIndex
-                        }
-                        isUserInteracting = true
+                Picker(
+                    index = decimalPickerIndex,
+                    values = decimalPickerItems,
+                    onIndexChange = { newIndex ->
+                        val item = decimalPickerItems.getOrNull(newIndex) ?: return@Picker
+                        handleDecimalPickerChange(item.position)
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isControlReady,
+                    labelStyle = pickerTextStyle,
+                    labelSize = DpSize(pickerWidth, pickerHeight / 3),
+                    dividerHeight = 2.dp
                 )
                 if (!isControlReady) {
                     DisabledOverlay()
@@ -1014,6 +1577,14 @@ private fun DisabledOverlay() {
                 onClick = {}
             )
     )
+}
+
+private data class DecimalPickerLabel(
+    val position: Int,
+    val displayValue: Int,
+    val text: String
+) {
+    override fun toString(): String = text
 }
 
 @Composable
@@ -1127,12 +1698,13 @@ private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
 @Composable
 private fun SettingsSection(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
 ) {
     var signalUnit by remember(state.signalUnit) { mutableStateOf(state.signalUnit) }
     var networkBuffer by remember(state.networkBuffer) { mutableStateOf(state.networkBuffer.toString()) }
     var playerBuffer by remember(state.playerBuffer) { mutableStateOf(state.playerBuffer.toString()) }
     var restartAudioOnTune by remember(state.restartAudioOnTune) { mutableStateOf(state.restartAudioOnTune) }
+    var passThroughEnabled by remember(state.passThroughEnabled) { mutableStateOf(state.passThroughEnabled) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -1203,13 +1775,56 @@ private fun SettingsSection(
                 }
             }
         }
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_pass_through_label),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(id = R.string.settings_pass_through_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .clickable { passThroughEnabled = !passThroughEnabled }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = passThroughEnabled,
+                        onCheckedChange = { passThroughEnabled = it }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (passThroughEnabled) {
+                            stringResource(id = R.string.settings_pass_through_enabled)
+                        } else {
+                            stringResource(id = R.string.settings_pass_through_disabled)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
         Button(
             onClick = {
                 onUpdateSettings(
                     signalUnit,
                     networkBuffer.toIntOrNull() ?: state.networkBuffer,
                     playerBuffer.toIntOrNull() ?: state.playerBuffer,
-                    restartAudioOnTune
+                    restartAudioOnTune,
+                    passThroughEnabled
                 )
             },
             modifier = Modifier.fillMaxWidth()
@@ -1267,16 +1882,16 @@ private fun ControlButtons(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ControlToggleButton(
-                text = stringResource(id = if (imsActive) R.string.ims_on else R.string.ims_off),
-                pressed = imsActive,
-                onClick = onToggleIms,
+                text = stringResource(id = R.string.control_label_ceq),
+                pressed = eqActive,
+                onClick = onToggleEq,
                 enabled = state.isConnected,
                 modifier = Modifier.weight(1f)
             )
             ControlToggleButton(
-                text = stringResource(id = if (eqActive) R.string.eq_on else R.string.eq_off),
-                pressed = eqActive,
-                onClick = onToggleEq,
+                text = stringResource(id = R.string.control_label_ims),
+                pressed = imsActive,
+                onClick = onToggleIms,
                 enabled = state.isConnected,
                 modifier = Modifier.weight(1f)
             )
@@ -1461,7 +2076,6 @@ private fun buildRadiotextDisplay(line: String?, errors: List<Int>): Pair<String
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RdsRadiotextContent(tuner: TunerState?) {
-    RdsLabelText(text = stringResource(id = R.string.radiotext_label))
     val baseStyle = MaterialTheme.typography.bodyMedium
     val radiotextStyle = baseStyle.copy(
         fontSize = baseStyle.fontSize * 0.8f,
@@ -2173,8 +2787,23 @@ private fun MainScreenPreview() {
                 currentPty = { "10/Pop Music" },
                 antennaLabel = { state.previewAntennaLabel() },
                 onShowSettings = {},
-                onShowAbout = {}
+                onShowAbout = {},
+                onShowPublicServerPicker = {},
+                onHidePublicServerPicker = {},
+                onRefreshPublicServers = {},
+                onUpdatePublicServerQuery = {},
+                onSelectPublicServer = {}
             )
+        }
+    }
+}
+
+@Preview(name = "Help Section", showBackground = true, widthDp = 360)
+@Composable
+private fun HelpSectionPreview() {
+    FmDxTheme {
+        Surface {
+            HelpSection()
         }
     }
 }
@@ -2313,21 +2942,33 @@ private fun previewUiState(): UiState {
         isScanning = false,
         statusMessage = "Connected to ${tunerInfo.tunerName}",
         pendingFrequencyMHz = tunerState.freqMHz,
-        stationLogoUrl = "https://tef.noobish.eu/logos/HOL/800A.png"
+        stationLogoUrl = "https://tef.noobish.eu/logos/HOL/800A.png",
+        serverLatencyMs = 42.0
     )
 }
 
-@Preview(name = "Server Section", showBackground = true, widthDp = 360)
+@Preview(name = "Connection Section", showBackground = true, widthDp = 360)
 @Composable
-private fun ServerSectionPreview() {
+private fun ConnectionSectionPreview() {
     FmDxTheme {
         Surface {
-            ServerSection(
+            ConnectionSection(
                 state = previewUiState().copy(isConnected = false, isConnecting = false),
                 onUpdateUrl = {},
                 onConnect = {},
-                onDisconnect = {}
+                onDisconnect = {},
+                onShowPublicServerPicker = {}
             )
+        }
+    }
+}
+
+@Preview(name = "Server Info Section", showBackground = true, widthDp = 360)
+@Composable
+private fun ServerInfoSectionPreview() {
+    FmDxTheme {
+        Surface {
+            ServerInfoSection(state = previewUiState())
         }
     }
 }
@@ -2362,7 +3003,7 @@ private fun SettingsScreenPreview() {
         Surface {
             SettingsScreen(
                 state = previewUiState(),
-                onUpdateSettings = { _, _, _, _ -> },
+                onUpdateSettings = { _, _, _, _, _ -> },
                 onBack = {}
             )
         }

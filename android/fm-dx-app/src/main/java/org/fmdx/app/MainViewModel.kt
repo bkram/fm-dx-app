@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.fmdx.app.audio.DEFAULT_NETWORK_BUFFER_CHUNKS
@@ -34,11 +35,13 @@ import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.data.SpectrumPluginEvent
+import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.network.createFmDxOkHttpClient
+import org.fmdx.app.telemetry.PassThroughService
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -69,6 +72,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var commandJob: Job? = null
     private var spectrumScanFallbackJob: Job? = null
     private var stationLogoJob: Job? = null
+    private var latencyJob: Job? = null
+    private var publicServerJob: Job? = null
     private var lastLogoKey: String? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.let { if (it.isDone) it.get() else null }
@@ -108,11 +113,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(serverUrl = url) }
     }
 
+    fun showPublicServerPicker() {
+        val pickerState = _uiState.value.publicServerPickerState
+        if (!pickerState.isVisible) {
+            updatePublicServerPicker { it.copy(isVisible = true) }
+        }
+        if (pickerState.servers.isEmpty()) {
+            loadPublicServers(forceRefresh = false)
+        }
+    }
+
+    fun hidePublicServerPicker() {
+        updatePublicServerPicker { it.copy(isVisible = false, errorMessage = null) }
+    }
+
+    fun refreshPublicServerPicker() {
+        loadPublicServers(forceRefresh = true)
+    }
+
+    fun updatePublicServerQuery(query: String) {
+        updatePublicServerPicker { picker ->
+            val trimmed = query.take(MAX_PUBLIC_SERVER_QUERY_LENGTH)
+            picker.copy(
+                query = trimmed,
+                filteredServers = filterPublicServers(picker.servers, trimmed)
+            )
+        }
+    }
+
+    fun selectPublicServer(server: PublicServer) {
+        updateServerUrl(server.url)
+        updatePublicServerPicker { it.copy(isVisible = false) }
+    }
+
     fun updateSettings(
         signalUnit: SignalUnit,
         networkBuffer: Int,
         playerBuffer: Int,
-        restartAudioOnTune: Boolean
+        restartAudioOnTune: Boolean,
+        passThroughEnabled: Boolean
     ) {
         val clampedNetwork = networkBuffer.coerceIn(
             DEFAULT_NETWORK_BUFFER_CHUNKS,
@@ -124,10 +163,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 signalUnit = signalUnit,
                 networkBuffer = clampedNetwork,
                 playerBuffer = clampedPlayer,
-                restartAudioOnTune = restartAudioOnTune
+                restartAudioOnTune = restartAudioOnTune,
+                passThroughEnabled = passThroughEnabled
             )
         }
-        persistSettings(signalUnit, clampedNetwork, clampedPlayer, restartAudioOnTune)
+        persistSettings(
+            signalUnit,
+            clampedNetwork,
+            clampedPlayer,
+            restartAudioOnTune,
+            passThroughEnabled
+        )
+        updatePassThroughServiceState()
     }
 
     fun connect() {
@@ -177,6 +224,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 startPluginConnection(sanitized)
                 scheduleLogoUpdate(sanitized, _uiState.value.tunerState)
                 refreshSpectrum(sanitized)
+                startLatencyMonitor(sanitized)
+                updatePassThroughServiceState()
             } catch (ex: Exception) {
                 logDebug("connect(): failed", ex)
                 _uiState.update {
@@ -198,6 +247,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pluginConnection = null
         commandJob?.cancel()
         commandJob = null
+        stopLatencyMonitor()
         spectrumScanFallbackJob?.cancel()
         spectrumScanFallbackJob = null
         stationLogoJob?.cancel()
@@ -211,15 +261,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isConnecting = false,
                 audioPlaying = false,
                 isScanning = false,
-                statusMessage = "Disconnected",
+                statusMessage = null,
                 errorMessage = null,
                 tunerInfo = null,
                 tunerState = null,
                 antennas = emptyList(),
                 spectrum = baselineSpectrum(),
-                stationLogoUrl = DEFAULT_LOGO_URL
+                stationLogoUrl = DEFAULT_LOGO_URL,
+                isSpectrumAvailable = true
             )
         }
+        updatePassThroughServiceState()
     }
 
     fun toggleAudio() {
@@ -274,17 +326,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleIms() {
-        val state = _uiState.value.tunerState ?: return
-        val eq = if (state.eq) 1 else 0
-        val ims = if (state.ims) 0 else 1
-        sendCommand("G${eq}${ims}")
+        val tunerState = _uiState.value.tunerState ?: return
+        val newImsEnabled = !tunerState.ims
+        val eqBit = if (tunerState.eq) 1 else 0
+        val imsBit = if (newImsEnabled) 1 else 0
+        sendCommand("G${eqBit}${imsBit}")
+        _uiState.update { current ->
+            val currentTunerState = current.tunerState ?: return@update current
+            current.copy(tunerState = currentTunerState.copy(ims = newImsEnabled))
+        }
     }
 
     fun toggleEq() {
-        val state = _uiState.value.tunerState ?: return
-        val eq = if (state.eq) 0 else 1
-        val ims = if (state.ims) 1 else 0
-        sendCommand("G${eq}${ims}")
+        val tunerState = _uiState.value.tunerState ?: return
+        val newEqEnabled = !tunerState.eq
+        val eqBit = if (newEqEnabled) 1 else 0
+        val imsBit = if (tunerState.ims) 1 else 0
+        sendCommand("G${eqBit}${imsBit}")
+        _uiState.update { current ->
+            val currentTunerState = current.tunerState ?: return@update current
+            current.copy(tunerState = currentTunerState.copy(eq = newEqEnabled))
+        }
     }
 
     fun toggleStereoMode() {
@@ -320,8 +382,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     refreshSpectrum(url)
                     _uiState.update {
                         it.copy(
-                            isScanning = false,
-                            statusMessage = it.statusMessage ?: SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                            isScanning = false
                         )
                     }
                 }
@@ -345,14 +406,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (spectrumPoints != null) {
                 state.copy(
                     spectrum = spectrumPoints,
-                    statusMessage = null
+                    statusMessage = null,
+                    isSpectrumAvailable = true
                 )
             } else {
                 state.copy(
-                    statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE
+                    statusMessage = SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE,
+                    isSpectrumAvailable = false
                 )
             }
         }
+    }
+
+    private fun startLatencyMonitor(baseUrl: String) {
+        latencyJob?.cancel()
+        latencyJob = viewModelScope.launch {
+            var ema = _uiState.value.serverLatencyMs
+            while (isActive) {
+                val latency = repository.measureServerLatency(baseUrl, BuildConfig.USER_AGENT)
+                if (latency != null) {
+                    val measurement = latency.toDouble()
+                    ema =
+                        ema?.let { LATENCY_EMA_ALPHA * measurement + (1 - LATENCY_EMA_ALPHA) * it }
+                            ?: measurement
+                    _uiState.update { it.copy(serverLatencyMs = ema) }
+                }
+                delay(LATENCY_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopLatencyMonitor() {
+        latencyJob?.cancel()
+        latencyJob = null
+        _uiState.update { it.copy(serverLatencyMs = null) }
     }
 
     private fun startControlConnection(url: String) {
@@ -416,7 +503,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     spectrum = ensureSpectrum(points),
-                    isScanning = false
+                    isScanning = false,
+                    isSpectrumAvailable = true
                 )
             }
         }
@@ -545,6 +633,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return points.ifEmpty { baselineSpectrum() }
     }
 
+    private fun updatePassThroughServiceState() {
+        val state = _uiState.value
+        val app = getApplication<Application>()
+        val url = state.serverUrl
+        if (state.passThroughEnabled && state.isConnected && url.isNotBlank()) {
+            PassThroughService.start(app, url)
+        } else {
+            PassThroughService.stop(app)
+        }
+    }
+
     private fun scheduleLogoUpdate(baseUrl: String, state: TunerState?) {
         val normalizedBase = baseUrl.trimEnd('/')
         val piCode = state?.pi?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
@@ -583,10 +682,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_PLAYER_BUFFER = "player_buffer"
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
         private const val KEY_RECENT_SERVER_URLS = "recent_server_urls"
+        private const val KEY_PASS_THROUGH_ENABLED = "pass_through_enabled"
         private const val TAG = "MainViewModel"
         private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
         private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE =
             "Spectrum data unavailable on this server."
+        private const val LATENCY_POLL_INTERVAL_MS = 15_000L
+        private const val LATENCY_EMA_ALPHA = 0.3
+        private const val MAX_PUBLIC_SERVER_QUERY_LENGTH = 80
         const val DEFAULT_LOGO_URL = FmDxRepository.DEFAULT_LOGO_URL
 
         fun baselineSpectrum(): List<SpectrumPoint> {
@@ -646,13 +749,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         signalUnit: SignalUnit,
         networkBuffer: Int,
         playerBuffer: Int,
-        restartAudioOnTune: Boolean
+        restartAudioOnTune: Boolean,
+        passThroughEnabled: Boolean
     ) {
         preferences.edit {
             putString(KEY_SIGNAL_UNIT, signalUnit.name)
             putInt(KEY_NETWORK_BUFFER, networkBuffer)
             putInt(KEY_PLAYER_BUFFER, playerBuffer)
             putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
+            putBoolean(KEY_PASS_THROUGH_ENABLED, passThroughEnabled)
         }
     }
 
@@ -670,12 +775,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         val playerBuffer = persistedPlayerBuffer.coerceAtLeast(DEFAULT_PLAYER_BUFFER_MS)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
+        val passThroughEnabled = preferences.getBoolean(KEY_PASS_THROUGH_ENABLED, false)
         _uiState.update {
             it.copy(
                 signalUnit = signalUnit,
                 networkBuffer = networkBuffer,
                 playerBuffer = playerBuffer,
-                restartAudioOnTune = restartAudioOnTune
+                restartAudioOnTune = restartAudioOnTune,
+                passThroughEnabled = passThroughEnabled
             )
         }
     }
@@ -701,6 +808,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.d(TAG, message)
         }
     }
+
+    private fun loadPublicServers(forceRefresh: Boolean) {
+        if (publicServerJob?.isActive == true) {
+            if (!forceRefresh) return
+            publicServerJob?.cancel()
+        }
+        publicServerJob = viewModelScope.launch {
+            updatePublicServerPicker { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val servers =
+                    repository.getPublicServers(BuildConfig.USER_AGENT, forceRefresh = forceRefresh)
+                updatePublicServerPicker { picker ->
+                    picker.copy(
+                        servers = servers,
+                        filteredServers = filterPublicServers(servers, picker.query),
+                        isLoading = false,
+                        errorMessage = null
+                    )
+                }
+            } catch (ex: Exception) {
+                logDebug("loadPublicServers(): failed", ex)
+                updatePublicServerPicker { picker ->
+                    picker.copy(
+                        isLoading = false,
+                        errorMessage = ex.message ?: "Unable to load public servers"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun updatePublicServerPicker(
+        transform: (PublicServerPickerState) -> PublicServerPickerState
+    ) {
+        _uiState.update { state ->
+            state.copy(publicServerPickerState = transform(state.publicServerPickerState))
+        }
+    }
+
+    private fun filterPublicServers(
+        servers: List<PublicServer>,
+        query: String
+    ): List<PublicServer> {
+        if (query.isBlank()) return servers
+        return servers.filter { server -> server.matchesQuery(query) }
+    }
+
 }
 
 data class UiState(
@@ -719,7 +873,20 @@ data class UiState(
     val networkBuffer: Int = DEFAULT_NETWORK_BUFFER_CHUNKS,
     val playerBuffer: Int = DEFAULT_PLAYER_BUFFER_MS,
     val restartAudioOnTune: Boolean = false,
+    val passThroughEnabled: Boolean = false,
     val statusMessage: String? = null,
     val pendingFrequencyMHz: Double? = null,
-    val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL
+    val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL,
+    val serverLatencyMs: Double? = null,
+    val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
+    val isSpectrumAvailable: Boolean = true
+)
+
+data class PublicServerPickerState(
+    val isVisible: Boolean = false,
+    val isLoading: Boolean = false,
+    val query: String = "",
+    val errorMessage: String? = null,
+    val servers: List<PublicServer> = emptyList(),
+    val filteredServers: List<PublicServer> = emptyList()
 )

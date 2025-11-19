@@ -13,6 +13,11 @@
   in new UI toolkits without approval.
 - Honor the existing style guide: reuse established typography, colors, spacing, and component
   patterns unless product explicitly requests a deviation.
+- Status/metric headers (e.g., `RdsLabelText`, server info rows such as “Connected users” or
+  “Latency”)
+  must use the theme’s primary color (`MaterialTheme.colorScheme.primary`), while body text under
+  the
+  header stays on-surface/on-surfaceVariant, so new diagnostics match the existing spec.
 - Keep the UI modern and Compose-first: add or update composables with previews where practical so
   layouts stay testable, and avoid touching the audio playback stack unless a task explicitly calls
   for it.
@@ -20,6 +25,11 @@
   files) so previews and UI-only changes never leak into the state layer.
 - Preserve existing card grouping within each section; don't introduce new swipe carousels or
   restructure detail panes unless a ticket requests it.
+- The tuner’s frequency picker uses `NumberPicker` for the MHz column and the generic `Picker`
+  for the decimal column (both from `compose-material3-picker`). Keep their typography/sizing in
+  sync (headlineMedium, equal label heights) and preserve the current looping decimal behavior
+  where spinning past `.9` increments MHz and spinning below `.0` decrements it. Any tweaks to
+  tuning controls belong in `FrequencyControlsCard` inside `MainUi.kt`.
 
 ## Build & Install Checklist
 These steps assume you are in the repository root.
