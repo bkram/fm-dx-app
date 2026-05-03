@@ -24,9 +24,16 @@ class PassThroughTelemetrySender(
     private val preferences: SharedPreferences =
         appContext.getSharedPreferences(GPS_PREFS, Context.MODE_PRIVATE)
 
+    @Volatile
     private var udpSocket: DatagramSocket? = null
+
+    @Volatile
     private var senderJob: Job? = null
+
+    @Volatile
     private var staticQthJob: Job? = null
+
+    @Volatile
     private var gpsWebViewHelper: GpsWebViewHelper? = null
 
     @Volatile
@@ -129,22 +136,34 @@ class PassThroughTelemetrySender(
 
     private fun startSenderLoop() {
         if (senderJob != null) return
-        if (udpSocket == null) {
-            udpSocket = DatagramSocket()
+        val socket = udpSocket ?: try {
+            DatagramSocket().also { udpSocket = it }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to open UDP socket", t)
+            return
         }
         val dateFormat = SimpleDateFormat("dd-MM-yyyy", Locale.US)
         val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
         senderJob = scope.launch(Dispatchers.IO) {
-            while (true) {
-                try {
-                    val payload = buildPayload(dateFormat, timeFormat)
-                    if (payload != null) {
-                        sendUdp(payload)
+            try {
+                while (true) {
+                    try {
+                        val payload = buildPayload(dateFormat, timeFormat)
+                        if (payload != null) {
+                            sendUdp(payload)
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Failed to emit pass-through payload", t)
                     }
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Failed to emit pass-through payload", t)
+                    delay(1000L)
                 }
-                delay(1000L)
+            } finally {
+                // Guarantee the socket gets closed if the loop exits via cancellation or any
+                // unhandled error, not only via the explicit stopSenderLoop() path.
+                if (udpSocket === socket) {
+                    runCatching { socket.close() }
+                    udpSocket = null
+                }
             }
         }
     }
@@ -278,7 +297,8 @@ class PassThroughTelemetrySender(
     private fun stopGpsWebView() {
         try {
             gpsWebViewHelper?.stop()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop GPS WebView", e)
         }
         gpsWebViewHelper = null
     }

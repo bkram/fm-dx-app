@@ -57,6 +57,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import com.mikepenz.markdown.m3.Markdown
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -104,12 +106,16 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -140,6 +146,15 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
 import org.fmdx.app.model.SpectrumPoint
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
@@ -147,6 +162,7 @@ import org.fmdx.app.model.TxInfo
 import org.fmdx.app.ui.theme.FmDxTheme
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -173,12 +189,31 @@ internal fun FmDxApp(
     onHidePublicServerPicker: () -> Unit,
     onRefreshPublicServers: () -> Unit,
     onUpdatePublicServerQuery: (String) -> Unit,
-    onSelectPublicServer: (PublicServer) -> Unit
+    onSelectPublicServer: (PublicServer) -> Unit,
+    onRemoveRecentServer: (String) -> Unit = {}
 ) {
     val showSettingsState = rememberSaveable { mutableStateOf(false) }
     val showAboutState = rememberSaveable { mutableStateOf(false) }
     val showSettings by showSettingsState
     val showAbout by showAboutState
+
+    val haptics = LocalHapticFeedback.current
+    val hapticTap = remember(haptics) {
+        { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+    }
+    val hConnect = { hapticTap(); onConnect() }
+    val hDisconnect = { hapticTap(); onDisconnect() }
+    val hToggleAudio = { hapticTap(); onToggleAudio() }
+    val hToggleEq = { hapticTap(); onToggleEq() }
+    val hToggleIms = { hapticTap(); onToggleIms() }
+    val hToggleStereoMode = { hapticTap(); onToggleStereoMode() }
+    val hCycleAntenna = { hapticTap(); onCycleAntenna() }
+    val hScan = { hapticTap(); onScan() }
+    val hTuneDirect: (Double) -> Unit = { freq -> hapticTap(); onTuneDirect(freq) }
+    val hSelectPublicServer: (PublicServer) -> Unit = { server ->
+        hapticTap(); onSelectPublicServer(server)
+    }
+    val hShowPublicServerPicker = { hapticTap(); onShowPublicServerPicker() }
 
     when {
         showSettings -> {
@@ -198,25 +233,26 @@ internal fun FmDxApp(
                 state = state,
                 snackbarHostState = snackbarHostState,
                 onUpdateUrl = onUpdateUrl,
-                onConnect = onConnect,
-                onDisconnect = onDisconnect,
-                onToggleAudio = onToggleAudio,
-                onTuneDirect = onTuneDirect,
-                onToggleEq = onToggleEq,
-                onToggleIms = onToggleIms,
-                onToggleStereoMode = onToggleStereoMode,
-                onCycleAntenna = onCycleAntenna,
-                onScan = onScan,
+                onConnect = hConnect,
+                onDisconnect = hDisconnect,
+                onToggleAudio = hToggleAudio,
+                onTuneDirect = hTuneDirect,
+                onToggleEq = hToggleEq,
+                onToggleIms = hToggleIms,
+                onToggleStereoMode = hToggleStereoMode,
+                onCycleAntenna = hCycleAntenna,
+                onScan = hScan,
                 formatSignal = formatSignal,
                 currentPty = currentPty,
                 antennaLabel = antennaLabel,
                 onShowSettings = { showSettingsState.value = true },
                 onShowAbout = { showAboutState.value = true },
-                onShowPublicServerPicker = onShowPublicServerPicker,
+                onShowPublicServerPicker = hShowPublicServerPicker,
                 onHidePublicServerPicker = onHidePublicServerPicker,
                 onRefreshPublicServers = onRefreshPublicServers,
                 onUpdatePublicServerQuery = onUpdatePublicServerQuery,
-                onSelectPublicServer = onSelectPublicServer
+                onSelectPublicServer = hSelectPublicServer,
+                onRemoveRecentServer = onRemoveRecentServer
             )
         }
     }
@@ -246,7 +282,8 @@ private fun MainScreen(
     onHidePublicServerPicker: () -> Unit,
     onRefreshPublicServers: () -> Unit,
     onUpdatePublicServerQuery: (String) -> Unit,
-    onSelectPublicServer: (PublicServer) -> Unit
+    onSelectPublicServer: (PublicServer) -> Unit,
+    onRemoveRecentServer: (String) -> Unit = {}
 ) {
     var isSpectrumDragging by remember { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
@@ -262,7 +299,8 @@ private fun MainScreen(
                     onUpdateUrl = onUpdateUrl,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
-                    onShowPublicServerPicker = onShowPublicServerPicker
+                    onShowPublicServerPicker = onShowPublicServerPicker,
+                    onRemoveRecentServer = onRemoveRecentServer
                 )
             }
         )
@@ -796,7 +834,8 @@ private fun ConnectionSection(
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onShowPublicServerPicker: () -> Unit
+    onShowPublicServerPicker: () -> Unit,
+    onRemoveRecentServer: (String) -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
     val connectAndDismissKeyboard = {
@@ -854,6 +893,16 @@ private fun ConnectionSection(
                         recentServers.forEach { server ->
                             DropdownMenuItem(
                                 text = { Text(server) },
+                                trailingIcon = {
+                                    IconButton(onClick = { onRemoveRecentServer(server) }) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Close,
+                                            contentDescription = stringResource(
+                                                id = R.string.recent_servers_remove
+                                            )
+                                        )
+                                    }
+                                },
                                 onClick = {
                                     recentExpanded = false
                                     onUpdateUrl(server)
@@ -1133,14 +1182,8 @@ private fun PublicServerCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            server.description?.let { description ->
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
+            server.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Markdown(content = description)
             }
             TextButton(
                 onClick = { onSelect(server) },
@@ -1241,10 +1284,9 @@ private fun ServerInfoCard(
                     ),
                     style = MaterialTheme.typography.bodyMedium
                 )
-                Text(
-                    text = tunerInfo.tunerDescription,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (tunerInfo.tunerDescription.isNotBlank()) {
+                    Markdown(content = tunerInfo.tunerDescription)
+                }
             }
             ServerInfoMetricRow(
                 label = stringResource(id = R.string.server_info_users),
@@ -1720,6 +1762,7 @@ private fun SettingsSection(
                     onSignalUnitSelected = { signalUnit = it })
             }
         }
+        LanguagePickerCard()
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -1830,6 +1873,66 @@ private fun SettingsSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = stringResource(id = R.string.apply_settings))
+        }
+    }
+}
+
+@Composable
+private fun LanguagePickerCard() {
+    val currentTag = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+        .substringBefore('-')
+        .lowercase()
+        .takeIf { it.isNotBlank() }
+    var selected by remember { mutableStateOf(currentTag) }
+    val haptics = LocalHapticFeedback.current
+    val choices = listOf(
+        null to stringResource(id = R.string.settings_language_auto),
+        "en" to "English",
+        "nl" to "Nederlands"
+    )
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            RdsLabelText(text = stringResource(id = R.string.settings_language_title))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                choices.forEach { (tag, label) ->
+                    val isSelected = selected == tag
+                    val colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        contentColor = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selected = tag
+                            AppCompatDelegate.setApplicationLocales(
+                                if (tag == null) {
+                                    LocaleListCompat.getEmptyLocaleList()
+                                } else {
+                                    LocaleListCompat.forLanguageTags(tag)
+                                }
+                            )
+                        },
+                        colors = colors,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = label)
+                    }
+                }
+            }
         }
     }
 }
@@ -2500,186 +2603,132 @@ private fun SpectrumSection(
     onTuneDirect: (Double) -> Unit,
     onDragStateChange: (Boolean) -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (state.isScanning) {
-                val scanningLabel = stringResource(id = R.string.spectrum_scanning)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .semantics {
-                                contentDescription = scanningLabel
-                            }
-                    )
-                    Text(
-                        text = scanningLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            val spectrum = state.spectrum
-            if (spectrum.isEmpty()) {
-                onDragStateChange(false)
+    val spectrum = state.spectrum
+    if (spectrum.isEmpty()) {
+        // Plugin gating in MainViewModel hides this tab when data is unavailable, but if it is
+        // momentarily empty (e.g. between scans) keep the layout calm rather than blank.
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     text = stringResource(id = R.string.spectrum_plugin_unavailable),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                val sortedSpectrum = remember(spectrum) { spectrum.sortedBy { it.frequencyMHz } }
-                val frequencies =
-                    remember(sortedSpectrum) { sortedSpectrum.map { it.frequencyMHz } }
-                val minSpectrumFreq = frequencies.first()
-                val maxSpectrumFreq = frequencies.last()
-                val freqSpan = maxSpectrumFreq - minSpectrumFreq
-                val initialFreq =
-                    (state.tunerState?.freqMHz ?: state.pendingFrequencyMHz ?: minSpectrumFreq)
-                        .coerceIn(minSpectrumFreq, maxSpectrumFreq)
+            }
+        }
+        onDragStateChange(false)
+        return
+    }
 
-                var sliderValue by remember(
-                    minSpectrumFreq,
-                    maxSpectrumFreq
-                ) { mutableDoubleStateOf(initialFreq) }
+    val sortedSpectrum = remember(spectrum) { spectrum.sortedBy { it.frequencyMHz } }
+    val tunedFreq = state.tunerState?.freqMHz
+        ?: state.pendingFrequencyMHz
+        ?: sortedSpectrum.first().frequencyMHz
 
-                LaunchedEffect(state.tunerState?.freqMHz, minSpectrumFreq, maxSpectrumFreq) {
-                    state.tunerState?.freqMHz?.let { tuned ->
-                        sliderValue = tuned.coerceIn(minSpectrumFreq, maxSpectrumFreq)
-                        onDragStateChange(false)
-                    }
-                }
+    val availableBands = remember(sortedSpectrum) {
+        if (sortedSpectrum.isEmpty()) emptyList() else {
+            val dataMin = sortedSpectrum.first().frequencyMHz
+            val dataMax = sortedSpectrum.last().frequencyMHz
+            SpectrumBand.entries.filter { band ->
+                // Require at least 2 MHz of real overlap. Smaller slivers (e.g. a server with
+                // 80–88 MHz dumps a 0.5 MHz "tail" into CCIR which would otherwise render as
+                // 11 points crammed into the leftmost 2 % of the 20.5 MHz canvas).
+                val overlap = minOf(dataMax, band.max) - maxOf(dataMin, band.min)
+                overlap >= 2.0
+            }
+        }
+    }
+    if (availableBands.isEmpty()) {
+        onDragStateChange(false)
+        return
+    }
 
-                val displayFreq = ((sliderValue * 10).roundToInt() / 10.0)
+    val initialBand = remember(availableBands, state.tunerState?.freqMHz) {
+        availableBands.firstOrNull { tunedFreq in it.min..it.max }
+            ?: availableBands.first()
+    }
+    var selectedBand by rememberSaveable(availableBands) { mutableStateOf(initialBand) }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RdsLabelText(text = stringResource(id = R.string.spectrum_selected_frequency_label))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(
-                            id = R.string.spectrum_selected_frequency_value,
-                            displayFreq
-                        ),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+    LaunchedEffect(tunedFreq, availableBands) {
+        availableBands.firstOrNull { tunedFreq in it.min..it.max }?.let { band ->
+            if (band != selectedBand) selectedBand = band
+        }
+    }
 
-                val minZoomFraction = 0.15f
-                var zoomProgress by rememberSaveable(
-                    minSpectrumFreq,
-                    maxSpectrumFreq
-                ) { mutableFloatStateOf(1f) }
-                val spanFraction =
-                    if (freqSpan <= 1e-6) 1f else minZoomFraction + (1f - minZoomFraction) * zoomProgress
-                val smallestGap = remember(frequencies) {
-                    frequencies.zipWithNext { a, b -> abs(b - a) }
-                        .minOrNull()
-                        ?.takeIf { it > 1e-6 }
-                }
-                val baseSpan = if (freqSpan <= 1e-6) 0.0 else freqSpan * spanFraction
-                val visibleSpan = when {
-                    freqSpan <= 1e-6 -> 0.0
-                    smallestGap == null -> baseSpan
-                    else -> max(baseSpan, smallestGap)
-                }
-                val halfSpan = visibleSpan / 2.0
-                var visibleMin = sliderValue - halfSpan
-                var visibleMax = sliderValue + halfSpan
-                if (visibleMin < minSpectrumFreq) {
-                    val overflow = minSpectrumFreq - visibleMin
-                    visibleMin += overflow
-                    visibleMax += overflow
-                }
-                if (visibleMax > maxSpectrumFreq) {
-                    val overflow = visibleMax - maxSpectrumFreq
-                    visibleMin -= overflow
-                    visibleMax -= overflow
-                }
-                visibleMin = visibleMin.coerceIn(minSpectrumFreq, maxSpectrumFreq)
-                visibleMax = visibleMax.coerceIn(minSpectrumFreq, maxSpectrumFreq)
-                if (visibleMax - visibleMin <= 1e-6) {
-                    visibleMin = minSpectrumFreq
-                    visibleMax = maxSpectrumFreq
-                }
-                val startIndex = frequencies.indexOfFirst { it >= visibleMin }.let { index ->
-                    if (index == -1) 0 else index
-                }
-                val endIndex = frequencies.indexOfLast { it <= visibleMax }.let { index ->
-                    if (index == -1) frequencies.lastIndex else index
-                }
-                val paddedStart = (startIndex - 1).coerceAtLeast(0)
-                val paddedEnd = (endIndex + 1).coerceAtMost(sortedSpectrum.lastIndex)
-                val pointsForGraph = if (paddedStart <= paddedEnd) {
-                    sortedSpectrum.subList(paddedStart, paddedEnd + 1)
-                } else {
-                    sortedSpectrum
-                }
+    val visibleMin = selectedBand.min
+    val visibleMax = selectedBand.max
+    val visiblePoints = remember(sortedSpectrum, visibleMin, visibleMax) {
+        sortedSpectrum.filter { it.frequencyMHz in visibleMin..visibleMax }
+    }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.spectrum_zoom),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    val zoomMultiplier = if (spanFraction > 0f) 1f / spanFraction else 1f
-                    Text(
-                        text = String.format(Locale.ROOT, "%.1fx", zoomMultiplier),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Slider(
-                    value = zoomProgress,
-                    onValueChange = { zoomProgress = it.coerceIn(0f, 1f) },
-                    valueRange = 0f..1f,
-                    steps = 9,
-                    enabled = freqSpan > 1e-6
+    onDragStateChange(false)
+
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Prominent now-tuned frequency display.
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = String.format(Locale.US, "%.1f MHz", tunedFreq),
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.primary
                 )
-
-                SpectrumGraph(points = pointsForGraph, highlightFreq = sliderValue)
-
-                val sliderInteraction = remember { MutableInteractionSource() }
-                val sliderDragging by sliderInteraction.collectIsDraggedAsState()
-                LaunchedEffect(sliderDragging) {
-                    onDragStateChange(sliderDragging)
-                }
-
-                val sliderSteps = (frequencies.size - 2).coerceAtLeast(0)
-                Slider(
-                    value = sliderValue.toFloat(),
-                    onValueChange = { raw ->
-                        val target = raw.toDouble().coerceIn(minSpectrumFreq, maxSpectrumFreq)
-                        val nearest = frequencies.minByOrNull { abs(it - target) } ?: target
-                        sliderValue = nearest
-                    },
-                    onValueChangeFinished = {
-                        val currentFreq = state.tunerState?.freqMHz
-                        if (currentFreq == null || abs(currentFreq - sliderValue) >= 0.0001) {
-                            onTuneDirect(sliderValue)
-                        }
-                        onDragStateChange(false)
-                    },
-                    valueRange = minSpectrumFreq.toFloat()..maxSpectrumFreq.toFloat(),
-                    steps = sliderSteps.coerceAtLeast(0),
-                    interactionSource = sliderInteraction
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "%s · %.1f – %.1f MHz",
+                        stringResource(id = selectedBand.labelRes),
+                        visibleMin,
+                        visibleMax
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
 
-            Button(
-                onClick = onScan,
-                enabled = !state.isScanning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+        if (availableBands.size > 1) {
+            SpectrumBandPresets(
+                bands = availableBands,
+                selected = selectedBand,
+                onSelect = { selectedBand = it }
+            )
+        }
+
+        // Tap a peak on the graph to tune to it.
+        SpectrumGraph(
+            points = visiblePoints,
+            visibleMin = visibleMin,
+            visibleMax = visibleMax,
+            highlightFreq = tunedFreq,
+            onTapFrequency = { freq ->
+                val nearest = sortedSpectrum.minByOrNull { abs(it.frequencyMHz - freq) }?.frequencyMHz
+                    ?: freq
+                onTuneDirect(nearest)
+            }
+        )
+
+        FilledTonalButton(
+            onClick = onScan,
+            enabled = !state.isScanning,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (state.isScanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(text = stringResource(id = R.string.spectrum_scanning))
+            } else {
+                Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(text = stringResource(id = R.string.start_scan))
             }
         }
@@ -2689,74 +2738,155 @@ private fun SpectrumSection(
 @Composable
 private fun SpectrumGraph(
     points: List<SpectrumPoint>,
-    highlightFreq: Double
+    visibleMin: Double,
+    visibleMax: Double,
+    highlightFreq: Double,
+    onTapFrequency: (Double) -> Unit
 ) {
     val validPoints = points
         .filter { it.frequencyMHz.isFinite() && it.signalDbf.isFinite() }
         .sortedBy { it.frequencyMHz }
-    if (validPoints.isEmpty()) {
-        Text(text = stringResource(id = R.string.spectrum_unavailable))
-        return
-    }
-    val minFreq = validPoints.first().frequencyMHz
-    val maxFreq = validPoints.last().frequencyMHz
-    val freqSpan = (maxFreq - minFreq).coerceAtLeast(0.0001)
+    val freqSpan = (visibleMax - visibleMin).coerceAtLeast(0.0001)
     val maxSig = validPoints.maxOfOrNull { it.signalDbf } ?: 0.0
     val minSig = validPoints.minOfOrNull { it.signalDbf } ?: maxSig
     val signalSpan = (maxSig - minSig).takeIf { abs(it) >= 1e-6 } ?: 1.0
+
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
-    MaterialTheme.colorScheme.surface
-    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
-    val strokeWidthPx = with(LocalDensity.current) { 2.dp.toPx() }
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val strokeWidthPx = with(LocalDensity.current) { 2.5.dp.toPx() }
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = labelColor)
+    val textMeasurer = rememberTextMeasurer()
 
-    Card {
+    val gridFreqs = remember(visibleMin, visibleMax) {
+        val step = when {
+            freqSpan > 15.0 -> 5.0
+            freqSpan > 6.0 -> 2.0
+            freqSpan > 2.0 -> 1.0
+            else -> 0.5
+        }
+        val first = ceil(visibleMin / step) * step
+        generateSequence(first) { it + step }
+            .takeWhile { it <= visibleMax + 1e-6 }
+            .toList()
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+    ) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(240.dp)
+                .pointerInput(visibleMin, visibleMax) {
+                    detectTapGestures(
+                        onTap = { offset ->
+                            if (size.width > 0) {
+                                val ratio = (offset.x / size.width).coerceIn(0f, 1f)
+                                onTapFrequency(visibleMin + ratio * freqSpan)
+                            }
+                        }
+                    )
+                }
         ) {
             val width = size.width
             val height = size.height
+            val labelHeight = 18f * density
+            val plotHeight = (height - labelHeight).coerceAtLeast(20f)
 
-            drawRect(color = backgroundColor)
-            val path = Path()
-            var firstX = 0f
-            var lastX = 0f
-            validPoints.forEachIndexed { index, point ->
-                val ratio = ((point.frequencyMHz - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
+            // Gridlines + labels at major MHz boundaries inside the visible window.
+            gridFreqs.forEach { freq ->
+                val ratio = ((freq - visibleMin) / freqSpan).toFloat().coerceIn(0f, 1f)
                 val x = ratio * width
-                val normalized = ((point.signalDbf - minSig) / signalSpan)
-                    .toFloat()
-                    .coerceIn(0f, 1f)
-                val y = height - (normalized * height)
-                if (index == 0) {
-                    firstX = x
-                    path.moveTo(x, y)
-                } else {
-                    path.lineTo(x, y)
+                drawLine(
+                    color = gridColor,
+                    start = androidx.compose.ui.geometry.Offset(x, 0f),
+                    end = androidx.compose.ui.geometry.Offset(x, plotHeight),
+                    strokeWidth = density
+                )
+                val label = String.format(Locale.US, "%.0f", freq)
+                val measured = textMeasurer.measure(AnnotatedString(label), labelStyle)
+                val tx = (x - measured.size.width / 2f).coerceIn(2f, width - measured.size.width - 2f)
+                drawText(measured, topLeft = androidx.compose.ui.geometry.Offset(tx, plotHeight + 2f))
+            }
+
+            // Spectrum trace.
+            if (validPoints.isNotEmpty()) {
+                val path = Path()
+                var firstX = 0f
+                var lastX = 0f
+                validPoints.forEachIndexed { index, point ->
+                    val ratio = ((point.frequencyMHz - visibleMin) / freqSpan)
+                        .toFloat()
+                        .coerceIn(0f, 1f)
+                    val x = ratio * width
+                    val normalized = ((point.signalDbf - minSig) / signalSpan)
+                        .toFloat()
+                        .coerceIn(0f, 1f)
+                    val y = plotHeight - (normalized * plotHeight)
+                    if (index == 0) {
+                        firstX = x
+                        path.moveTo(x, y)
+                    } else {
+                        path.lineTo(x, y)
+                    }
+                    lastX = x
                 }
-                lastX = x
+                val fillPath = Path().apply {
+                    addPath(path)
+                    lineTo(lastX, plotHeight)
+                    lineTo(firstX, plotHeight)
+                    close()
+                }
+                drawPath(fillPath, color = secondaryColor.copy(alpha = 0.20f))
+                drawPath(path, color = secondaryColor, style = Stroke(width = strokeWidthPx))
             }
-            val fillPath = Path().apply {
-                addPath(path)
-                lineTo(lastX, height)
-                lineTo(firstX, height)
-                close()
-            }
-            drawPath(fillPath, color = secondaryColor.copy(alpha = 0.18f))
-            drawPath(path, color = secondaryColor, style = Stroke(width = strokeWidthPx))
-            if (highlightFreq in minFreq..maxFreq) {
+
+            // Tuned-frequency marker.
+            if (highlightFreq in visibleMin..visibleMax) {
                 val highlightRatio =
-                    ((highlightFreq - minFreq) / freqSpan).toFloat().coerceIn(0f, 1f)
+                    ((highlightFreq - visibleMin) / freqSpan).toFloat().coerceIn(0f, 1f)
                 val x = highlightRatio * width
                 drawLine(
                     color = primaryColor,
                     start = androidx.compose.ui.geometry.Offset(x, 0f),
-                    end = androidx.compose.ui.geometry.Offset(x, height),
+                    end = androidx.compose.ui.geometry.Offset(x, plotHeight),
                     strokeWidth = strokeWidthPx
                 )
             }
+        }
+    }
+}
+
+private enum class SpectrumBand(val min: Double, val max: Double, @androidx.annotation.StringRes val labelRes: Int) {
+    OIRT(65.8, 74.0, R.string.spectrum_band_oirt),
+    LOW(83.0, 87.5, R.string.spectrum_band_low),
+    CCIR(87.5, 108.0, R.string.spectrum_band_ccir)
+}
+
+@Composable
+private fun SpectrumBandPresets(
+    bands: List<SpectrumBand>,
+    selected: SpectrumBand,
+    onSelect: (SpectrumBand) -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        bands.forEach { band ->
+            FilterChip(
+                selected = selected == band,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onSelect(band)
+                },
+                label = { Text(stringResource(id = band.labelRes)) }
+            )
         }
     }
 }

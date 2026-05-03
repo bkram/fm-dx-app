@@ -25,7 +25,9 @@ Thumbs.db
 *.jks
 
 # IDE files
-.idea/
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/**
 *.iml
 *.ipr
 *.iws

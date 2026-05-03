@@ -37,9 +37,31 @@ class FmDxRepository(
     val client: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
-    private val logoCache = mutableMapOf<String, String?>()
+    private val logoCache = object : LinkedHashMap<String, String?>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>?): Boolean {
+            return size > MAX_LOGO_CACHE_SIZE
+        }
+    }
+
+    companion object {
+        private const val MAX_LOGO_CACHE_SIZE = 50
+        private const val COMMAND_THROTTLE_MS = 125L
+        private const val TIMEOUT_MS = 10000L
+        private const val TAG = "FmDxRepository"
+        private const val REMOTE_LOGO_BASE = "https://tef.noobish.eu/logos"
+        const val DEFAULT_LOGO_URL = "$REMOTE_LOGO_BASE/default-logo.png"
+        private const val LOGO_PATH = "logos"
+        private val LOGO_SANITIZE_REGEX = Regex("[/\\-*+:.,§%&\"!?|><=)(\\[\\]´`'~#\\s]")
+        private const val PUBLIC_SERVER_LIST_URL = "https://servers.fmdx.org/api/"
+        private const val PUBLIC_SERVER_CACHE_MS = 5 * 60 * 1000L
+    }
+
     private var publicServerCache: List<PublicServer> = emptyList()
     private var publicServerCacheTimestamp: Long = 0L
+
+    val cachedPublicServers: List<PublicServer>
+        get() = publicServerCache
+
     fun connectControl(
         baseUrl: String,
         userAgent: String,
@@ -66,9 +88,9 @@ class FmDxRepository(
                 try {
                     val state = TunerState.fromJson(text)
                     onState(state)
-                } catch (t: Throwable) {
-                    logDebug("control socket: failed to parse message", t)
-                    onError(t)
+                } catch (e: Exception) {
+                    logDebug("control socket: failed to parse message", e)
+                    onError(e)
                 }
             }
 
@@ -201,17 +223,26 @@ class FmDxRepository(
             }
         }
 
+        val countryCode = country?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
         val localBase = "$normalizedBase/$LOGO_PATH"
-        filenames.forEach { filename ->
-            val candidate = "$localBase/$filename"
-            if (urlExists(candidate)) {
-                logDebug("findStationLogo(): local hit -> $candidate")
-                logoCache[cacheKey] = candidate
-                return@withContext candidate
+        // The Highpoint webserver-station-logos plugin mirrors the tef.noobish.eu layout:
+        // /logos/{ITU}/{PI}.{ext}. Try the country-folder path first, then fall back to the flat
+        // /logos/{PI}.{ext} layout used by older plugin versions.
+        val localBases = buildList {
+            if (countryCode != null) add("$localBase/$countryCode")
+            add(localBase)
+        }
+        localBases.forEach { base ->
+            filenames.forEach { filename ->
+                val candidate = "$base/$filename"
+                if (urlExists(candidate)) {
+                    logDebug("findStationLogo(): local hit -> $candidate")
+                    logoCache[cacheKey] = candidate
+                    return@withContext candidate
+                }
             }
         }
 
-        val countryCode = country?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
         if (countryCode != null && uppercasePi != null) {
             findRemoteLogo(countryCode, uppercasePi, sanitizedProgram, filenames)?.let { remote ->
                 logDebug("findStationLogo(): remote hit -> $remote")
@@ -220,7 +251,7 @@ class FmDxRepository(
             }
         }
 
-        logDebug("findStationLogo(): no logo found, falling back to default")
+        logDebug("findStationLogo(): no logo found (filenames=$filenames countryCode=$countryCode), falling back to default")
         logoCache[cacheKey] = DEFAULT_LOGO_URL
         DEFAULT_LOGO_URL
     }
@@ -229,7 +260,9 @@ class FmDxRepository(
         userAgent: String,
         forceRefresh: Boolean = false
     ): List<PublicServer> = withContext(ioDispatcher) {
-        val now = System.currentTimeMillis()
+        // Use the monotonic SystemClock so a wall-clock change (NTP correction, manual reset)
+        // can't make the cache appear newer/older than it actually is.
+        val now = android.os.SystemClock.elapsedRealtime()
         val age = now - publicServerCacheTimestamp
         if (!forceRefresh && publicServerCache.isNotEmpty() && age in 0..PUBLIC_SERVER_CACHE_MS) {
             logDebug("getPublicServers(): returning cached list (${publicServerCache.size}) age=${age}ms")
@@ -237,7 +270,7 @@ class FmDxRepository(
         }
         val fresh = fetchPublicServersFromNetwork(userAgent)
         publicServerCache = fresh
-        publicServerCacheTimestamp = System.currentTimeMillis()
+        publicServerCacheTimestamp = android.os.SystemClock.elapsedRealtime()
         logDebug("getPublicServers(): fetched ${fresh.size} entries")
         fresh
     }
@@ -296,53 +329,57 @@ class FmDxRepository(
         sanitizedProgram: String?,
         filenames: List<String>
     ): String? {
-        val request = Request.Builder()
-            .url("$REMOTE_LOGO_BASE/logo_directory.html")
-            .build()
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = response.body.string()
-                if (body.isBlank()) return null
-                val document = Jsoup.parse(body)
-                val folderElement = document.select(".folder").firstOrNull { element ->
-                    element.text().trim().endsWith("./$countryCode")
-                } ?: return null
-                val fileContainer = folderElement.nextElementSibling() ?: return null
-                val available = fileContainer.select(".file a")
-                    .mapNotNull { it.text().trim().takeIf { text -> text.isNotEmpty() } }
-                    .toSet()
-                val priority = buildList {
-                    if (sanitizedProgram != null) {
-                        add("${piCode}_${sanitizedProgram}.svg")
-                        add("${piCode}_${sanitizedProgram}.png")
-                        add("${piCode}_${sanitizedProgram}.gif")
-                    }
-                    add("${piCode}.svg")
-                    add("${piCode}.png")
-                    add("${piCode}.gif")
-                }
-                priority.forEach { filename ->
-                    if (filename in available) {
-                        val resolved = "$REMOTE_LOGO_BASE/$countryCode/$filename"
-                        logDebug("findRemoteLogo(): directory match -> $resolved")
-                        return resolved
-                    }
-                }
-                // fallback to direct URL checks if HTML structure differs
-                filenames.forEach { filename ->
-                    val candidate = "$REMOTE_LOGO_BASE/$countryCode/$filename"
-                    if (urlExists(candidate)) {
-                        logDebug("findRemoteLogo(): direct match -> $candidate")
-                        return candidate
-                    }
-                }
-                null
+        // Mirror the upstream Highpoint plugin (webserver-station-logos): fetch the per-country
+        // folder listing directly. Each entry is an <a href="./8202.svg">8202.svg</a>.
+        val folderUrl = "$REMOTE_LOGO_BASE/$countryCode/"
+        val priority = buildList {
+            if (sanitizedProgram != null) {
+                add("${piCode}_${sanitizedProgram}.svg")
+                add("${piCode}_${sanitizedProgram}.png")
+                add("${piCode}_${sanitizedProgram}.gif")
             }
-        } catch (_: Exception) {
-            logDebug("findRemoteLogo(): failed to parse remote directory for $countryCode")
-            null
+            add("${piCode}.svg")
+            add("${piCode}.png")
+            add("${piCode}.gif")
         }
+        val available: Set<String> = try {
+            val request = Request.Builder().url(folderUrl).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    logDebug("findRemoteLogo(): folder $folderUrl -> ${response.code}")
+                    return@use emptySet()
+                }
+                val body = response.body.string()
+                if (body.isBlank()) return@use emptySet()
+                Jsoup.parse(body).select("a[href]")
+                    .mapNotNull { element ->
+                        element.attr("href").trim().removePrefix("./")
+                            .substringAfterLast('/')
+                            .takeIf { it.isNotEmpty() }
+                    }
+                    .toSet()
+            }
+        } catch (ex: Exception) {
+            logDebug("findRemoteLogo(): folder $folderUrl listing failed", ex)
+            emptySet()
+        }
+        priority.forEach { filename ->
+            if (filename in available) {
+                val resolved = "$folderUrl$filename"
+                logDebug("findRemoteLogo(): directory match -> $resolved")
+                return resolved
+            }
+        }
+        // Last resort: direct HEAD probes if directory listing was empty or did not contain our names.
+        filenames.forEach { filename ->
+            val candidate = "$folderUrl$filename"
+            if (urlExists(candidate)) {
+                logDebug("findRemoteLogo(): direct match -> $candidate")
+                return candidate
+            }
+        }
+        logDebug("findRemoteLogo(): no remote match for pi=$piCode in $countryCode (${available.size} files listed)")
+        return null
     }
 
     suspend fun fetchTunerInfo(url: String, userAgent: String): TunerInfo =
@@ -491,6 +528,21 @@ class FmDxRepository(
     private fun parseSpectrumDataset(json: JSONObject): List<SpectrumPoint>? {
         parseSpectrumPointsArray(json.optJSONArray("points"))?.let { return it }
 
+        // Newer SpectrumGraph plugin builds split data into per-band keys: sdOirt / sdLow / sdFm.
+        // The active "sd" key just mirrors whichever band the server is currently displaying. For
+        // multi-band servers we want to MERGE the per-band datasets so the band-selector chips
+        // show the full picture.
+        val perBandKeys = listOf("sdOirt", "sdLow", "sdFm")
+        val merged = mutableListOf<SpectrumPoint>()
+        perBandKeys.forEach { key ->
+            val data = json.optString(key, "")
+            parseSpectrumString(data)?.let { merged += it }
+        }
+        if (merged.isNotEmpty()) {
+            return merged.distinctBy { it.frequencyMHz }.sortedBy { it.frequencyMHz }
+        }
+
+        // Fall back to the single-key form ("sd", or "sd0"/"sd1" indexed by "ad").
         val candidateKeys = mutableListOf<String>()
         if (json.has("sd")) candidateKeys += "sd"
         if (json.has("ad")) {
@@ -504,7 +556,7 @@ class FmDxRepository(
         val keysIterator = json.keys()
         while (keysIterator.hasNext()) {
             val key = keysIterator.next()
-            if (key.startsWith("sd")) candidateKeys += key
+            if (key.startsWith("sd") && key !in perBandKeys) candidateKeys += key
         }
         candidateKeys.distinct().forEach { key ->
             val data = json.optString(key, "")
@@ -565,18 +617,6 @@ class FmDxRepository(
         }
     }
 
-    companion object {
-        private const val COMMAND_THROTTLE_MS = 125L
-        private const val TIMEOUT_MS = 10000L
-        private const val TAG = "FmDxRepository"
-        private const val REMOTE_LOGO_BASE = "https://tef.noobish.eu/logos"
-        const val DEFAULT_LOGO_URL = "$REMOTE_LOGO_BASE/default-logo.png"
-        private const val LOGO_PATH = "logos"
-        private val LOGO_SANITIZE_REGEX = Regex("[/\\-*+:.,§%&\"!?|><=)(\\[\\]´`'~#\\s]")
-        private const val PUBLIC_SERVER_LIST_URL = "https://servers.fmdx.org/api/"
-        private const val PUBLIC_SERVER_CACHE_MS = 5 * 60 * 1000L
-    }
-
     private fun logDebug(message: String, throwable: Throwable? = null) {
         if (!BuildConfig.DEBUG) return
         if (throwable != null) {
@@ -605,7 +645,10 @@ class PluginConnection internal constructor(
     private val webSocket: WebSocket
 ) {
     fun requestSpectrumScan() {
-        val payload = """{"type":"spectrum-graph","action":"scan","value":{"status":"scan"}}"""
+        // Matches the upstream FM-DX-Webserver-Plugin-Spectrum-Graph payload exactly:
+        //   { type: 'spectrum-graph', value: { status: 'scan' } }
+        // Source: pluginSpectrumGraph.js's plain-scan branch.
+        val payload = """{"type":"spectrum-graph","value":{"status":"scan"}}"""
         webSocket.send(payload)
     }
 
