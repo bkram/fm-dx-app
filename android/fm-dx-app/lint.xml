@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+      Branding assets retained intentionally even though they are not currently
+      referenced from the codebase (see fixes.md item 4: WebP launcher art and
+      `fmdx_background` are kept for legacy launcher fallbacks).
+    -->
+    <issue id="UnusedResources">
+        <ignore path="src/main/res/drawable/ic_launcher_foreground.xml" />
+        <ignore regexp=".*fmdx_background.*" />
+    </issue>
+</lint>

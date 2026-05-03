@@ -7,25 +7,21 @@
     <string name="play_audio">Audio afspelen</string>
     <string name="stop_audio">Audio stoppen</string>
     <string name="spectrum_plugin_unavailable">Spectrumgegevens niet beschikbaar op deze server.</string>
-    <string name="server">Server</string>
     <string name="tuner">Tuner</string>
     <string name="rds">Informatie</string>
     <string name="spectrum">Spectrum</string>
     <string name="spectrum_scanning">Scannen…</string>
-    <string name="spectrum_zoom">Zoom</string>
     <string name="station_logo_content_description">Stationlogo</string>
     <string name="signal_unit">Signaaleenheid</string>
     <string name="connected">Verbonden</string>
     <string name="disconnected">Verbinding verbroken</string>
     <string name="connecting">Verbinding maken</string>
-    <string name="spectrum_unavailable">Spectrumgegevens niet beschikbaar.</string>
-    <string name="spectrum_selected_frequency_label">Frequentie:</string>
-    <string name="spectrum_selected_frequency_value">%1$.2f MHz</string>
     <string name="antenna_switch">Antenne wisselen</string>
     <string name="antenna_current">Antenne: %1$s</string>
     <string name="settings">Instellingen</string>
     <string name="menu">Menu</string>
     <string name="recent_servers">Recente servers</string>
+    <string name="recent_servers_remove">Verwijderen uit recente servers</string>
     <string name="about">Over</string>
     <string name="browse_public_servers">Openbare servers doorzoeken</string>
     <string name="server_picker_title">Openbare servers</string>
@@ -57,6 +53,8 @@
     <string name="settings_pass_through_desc">Verzend de metrics naar de TEF Logger. Standaard uitgeschakeld.</string>
     <string name="settings_pass_through_enabled">Ingeschakeld</string>
     <string name="settings_pass_through_disabled">Uitgeschakeld</string>
+    <string name="settings_language_title">Taal</string>
+    <string name="settings_language_auto">Systeemstandaard</string>
     <string name="pass_through_notification_channel">Pass-throughtelemetrie</string>
     <string name="pass_through_notification_title">Doorsturen actief</string>
     <string name="pass_through_notification_message">UDP-telemetrie verzenden voor %1$s</string>
@@ -135,7 +133,6 @@
     <string name="help_more_support_title">Meer hulp nodig?</string>
     <string name="help_more_support_description">Word lid van de FMDX.org Discord voor directe hulp, of neem contact op met de beheerder van je tuner voor toegangsdetails.</string>
     <string name="help_more_support_link">Open FMDX.org Discord</string>
-    <string name="help_discord_url" translatable="false">https://discord.com/invite/ZAVNdS74mC</string>
     <string name="rds_flag_tp_full">Verkeersprogramma (TP)</string>
     <string name="rds_flag_ta_full">Verkeersbericht (TA)</string>
     <string name="rds_flag_ms_music_full">Muziekprogramma</string>
