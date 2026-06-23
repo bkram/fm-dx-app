@@ -37,10 +37,11 @@
     <string name="server_picker_select">Deze server gebruiken</string>
     <string name="server_picker_status_online">Online</string>
     <string name="server_picker_status_offline">Vergrendeld</string>
-    <string name="apply_settings">Toepassen</string>
     <string name="back">Terug</string>
     <string name="settings_display_title">Weergave</string>
-    <string name="settings_audio_buffering_title">Audiobuffering</string>
+    <string name="settings_audio_title">Audio</string>
+    <string name="settings_play_audio_by_default">Audio standaard afspelen</string>
+    <string name="settings_play_audio_by_default_desc">Audio automatisch starten zodra een tuner verbindt.</string>
     <string name="settings_audio_buffering_desc">Lagere waarden kunnen de latentie verminderen, maar kunnen haperingen veroorzaken bij instabiele verbindingen.</string>
     <plurals name="settings_current_buffers">
         <item quantity="one">Huidige buffers: %1$d blok / %2$d ms</item>

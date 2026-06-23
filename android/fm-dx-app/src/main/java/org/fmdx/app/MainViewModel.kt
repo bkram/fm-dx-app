@@ -102,7 +102,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 publicServerPickerState = local.publicServerPickerState,
                 isSpectrumAvailable = local.isSpectrumAvailable,
                 preferDirectMode = local.preferDirectMode,
-                usbTunerName = local.usbTunerName
+                usbTunerName = local.usbTunerName,
+                playAudioByDefault = local.playAudioByDefault
             )
         }.stateIn(
             scope = viewModelScope,
@@ -194,6 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _localState.update { it.copy(isSpectrumAvailable = false) }
                     }
                     updatePassThroughServiceState()
+                    maybeStartDefaultAudio(session.connectionType)
                 } else if (!session.isConnected && lastUrl != null) {
                     lastUrl = null
                     UsbAudioService.stop(getApplication())
@@ -267,7 +269,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         networkBuffer: Int,
         playerBuffer: Int,
         restartAudioOnTune: Boolean,
-        passThroughEnabled: Boolean
+        passThroughEnabled: Boolean,
+        playAudioByDefault: Boolean
     ) {
         val clampedNetwork = networkBuffer.coerceIn(
             DEFAULT_NETWORK_BUFFER_CHUNKS,
@@ -280,7 +283,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 networkBuffer = clampedNetwork,
                 playerBuffer = clampedPlayer,
                 restartAudioOnTune = restartAudioOnTune,
-                passThroughEnabled = passThroughEnabled
+                passThroughEnabled = passThroughEnabled,
+                playAudioByDefault = playAudioByDefault
             )
         }
         persistSettings(
@@ -288,7 +292,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             clampedNetwork,
             clampedPlayer,
             restartAudioOnTune,
-            passThroughEnabled
+            passThroughEnabled,
+            playAudioByDefault
         )
         updatePassThroughServiceState()
     }
@@ -326,6 +331,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     player.pause()
                 } else {
                     refreshAudioStream(forcePlay = true)
+                }
+            }
+        }
+    }
+
+    /** Start audio automatically on connect when the user enabled "play audio by default". */
+    private fun maybeStartDefaultAudio(connectionType: ConnectionType) {
+        if (!_localState.value.playAudioByDefault) return
+        if (uiState.value.audioPlaying) return
+        when (connectionType) {
+            ConnectionType.SERVER -> refreshAudioStream(forcePlay = true)
+            ConnectionType.USB -> {
+                if (usbAudioEngine.hasRecordPermission() && usbAudioEngine.findUsbAudioInput() != null) {
+                    UsbAudioService.start(getApplication())
+                    _localState.update { it.copy(audioPlaying = true) }
                 }
             }
         }
@@ -577,7 +597,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         networkBuffer: Int,
         playerBuffer: Int,
         restartAudioOnTune: Boolean,
-        passThroughEnabled: Boolean
+        passThroughEnabled: Boolean,
+        playAudioByDefault: Boolean
     ) {
         preferences.edit {
             putString(KEY_SIGNAL_UNIT, signalUnit.name)
@@ -585,6 +606,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             putInt(KEY_PLAYER_BUFFER, playerBuffer)
             putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
             putBoolean(KEY_PASS_THROUGH_ENABLED, passThroughEnabled)
+            putBoolean(KEY_PLAY_AUDIO_BY_DEFAULT, playAudioByDefault)
         }
     }
 
@@ -604,6 +626,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
         val passThroughEnabled = preferences.getBoolean(KEY_PASS_THROUGH_ENABLED, false)
         val preferDirectMode = preferences.getBoolean(KEY_PREFER_DIRECT_MODE, false)
+        val playAudioByDefault = preferences.getBoolean(KEY_PLAY_AUDIO_BY_DEFAULT, false)
         _localState.update {
             it.copy(
                 signalUnit = signalUnit,
@@ -611,7 +634,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playerBuffer = playerBuffer,
                 restartAudioOnTune = restartAudioOnTune,
                 passThroughEnabled = passThroughEnabled,
-                preferDirectMode = preferDirectMode
+                preferDirectMode = preferDirectMode,
+                playAudioByDefault = playAudioByDefault
             )
         }
     }
@@ -695,6 +719,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_PLAYER_BUFFER = "player_buffer"
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
         private const val KEY_PASS_THROUGH_ENABLED = "pass_through_enabled"
+        private const val KEY_PLAY_AUDIO_BY_DEFAULT = "play_audio_by_default"
         private const val TAG = "MainViewModel"
         private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
         private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE =
@@ -730,7 +755,8 @@ private data class LocalUiState(
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
     val isSpectrumAvailable: Boolean = false,
     val preferDirectMode: Boolean = false,
-    val usbTunerName: String? = null
+    val usbTunerName: String? = null,
+    val playAudioByDefault: Boolean = false
 )
 
 data class UiState(
@@ -758,7 +784,8 @@ data class UiState(
     val serverLatencyMs: Double? = null,
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
     val isSpectrumAvailable: Boolean = false,
-    val usbTunerName: String? = null
+    val usbTunerName: String? = null,
+    val playAudioByDefault: Boolean = false
 )
 
 data class PublicServerPickerState(

@@ -191,7 +191,7 @@ internal fun FmDxApp(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit,
     onShowPublicServerPicker: () -> Unit,
     onHidePublicServerPicker: () -> Unit,
     onRefreshPublicServers: () -> Unit,
@@ -537,7 +537,7 @@ private fun MainScreen(
 @Composable
 private fun SettingsScreen(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -1856,13 +1856,26 @@ private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
 @Composable
 private fun SettingsSection(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit
 ) {
     var signalUnit by remember(state.signalUnit) { mutableStateOf(state.signalUnit) }
     var networkBuffer by remember(state.networkBuffer) { mutableStateOf(state.networkBuffer.toString()) }
     var playerBuffer by remember(state.playerBuffer) { mutableStateOf(state.playerBuffer.toString()) }
     var restartAudioOnTune by remember(state.restartAudioOnTune) { mutableStateOf(state.restartAudioOnTune) }
     var passThroughEnabled by remember(state.passThroughEnabled) { mutableStateOf(state.passThroughEnabled) }
+    var playAudioByDefault by remember(state.playAudioByDefault) { mutableStateOf(state.playAudioByDefault) }
+
+    // Settings apply immediately on change — there is no Apply button.
+    fun commit() {
+        onUpdateSettings(
+            signalUnit,
+            networkBuffer.toIntOrNull() ?: state.networkBuffer,
+            playerBuffer.toIntOrNull() ?: state.playerBuffer,
+            restartAudioOnTune,
+            passThroughEnabled,
+            playAudioByDefault
+        )
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -1878,7 +1891,7 @@ private fun SettingsSection(
                 )
                 SignalUnitSelector(
                     selected = signalUnit,
-                    onSignalUnitSelected = { signalUnit = it }
+                    onSignalUnitSelected = { signalUnit = it; commit() }
                 )
             }
         }
@@ -1888,11 +1901,17 @@ private fun SettingsSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                SettingsCategoryHeader(text = stringResource(id = R.string.settings_audio_buffering_title))
-                Text(
-                    text = stringResource(id = R.string.settings_audio_buffering_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                SettingsCategoryHeader(text = stringResource(id = R.string.settings_audio_title))
+                SettingsSwitchRow(
+                    title = stringResource(id = R.string.settings_play_audio_by_default),
+                    subtitle = stringResource(id = R.string.settings_play_audio_by_default_desc),
+                    checked = playAudioByDefault,
+                    onCheckedChange = { playAudioByDefault = it; commit() }
+                )
+                SettingsSwitchRow(
+                    title = stringResource(id = R.string.settings_restart_audio_on_tune),
+                    checked = restartAudioOnTune,
+                    onCheckedChange = { restartAudioOnTune = it; commit() }
                 )
                 val bufferLabel = pluralStringResource(
                     id = R.plurals.settings_current_buffers,
@@ -1901,13 +1920,18 @@ private fun SettingsSection(
                     state.playerBuffer
                 )
                 Text(
+                    text = stringResource(id = R.string.settings_audio_buffering_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
                     text = bufferLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = networkBuffer,
-                    onValueChange = { networkBuffer = it.filter { c -> c.isDigit() } },
+                    onValueChange = { networkBuffer = it.filter { c -> c.isDigit() }; commit() },
                     label = { Text(stringResource(id = R.string.settings_network_buffer_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1915,16 +1939,11 @@ private fun SettingsSection(
                 )
                 OutlinedTextField(
                     value = playerBuffer,
-                    onValueChange = { playerBuffer = it.filter { c -> c.isDigit() } },
+                    onValueChange = { playerBuffer = it.filter { c -> c.isDigit() }; commit() },
                     label = { Text(stringResource(id = R.string.settings_player_buffer_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-                SettingsSwitchRow(
-                    title = stringResource(id = R.string.settings_restart_audio_on_tune),
-                    checked = restartAudioOnTune,
-                    onCheckedChange = { restartAudioOnTune = it }
                 )
             }
         }
@@ -1938,23 +1957,9 @@ private fun SettingsSection(
                     title = stringResource(id = R.string.settings_pass_through_label),
                     subtitle = stringResource(id = R.string.settings_pass_through_desc),
                     checked = passThroughEnabled,
-                    onCheckedChange = { passThroughEnabled = it }
+                    onCheckedChange = { passThroughEnabled = it; commit() }
                 )
             }
-        }
-        Button(
-            onClick = {
-                onUpdateSettings(
-                    signalUnit,
-                    networkBuffer.toIntOrNull() ?: state.networkBuffer,
-                    playerBuffer.toIntOrNull() ?: state.playerBuffer,
-                    restartAudioOnTune,
-                    passThroughEnabled
-                )
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = stringResource(id = R.string.apply_settings))
         }
     }
 }
@@ -3249,7 +3254,7 @@ private fun SettingsScreenPreview() {
         Surface {
             SettingsScreen(
                 state = previewUiState(),
-                onUpdateSettings = { _, _, _, _, _ -> },
+                onUpdateSettings = { _, _, _, _, _, _ -> },
                 onBack = {}
             )
         }
