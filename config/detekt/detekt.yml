@@ -21,6 +21,11 @@ formatting:
 Compose:
   active: true
 
+naming:
+  # @Composable functions are PascalCase by convention.
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+
 style:
   MaxLineLength:
     maxLineLength: 120

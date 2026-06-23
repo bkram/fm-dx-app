@@ -137,8 +137,8 @@ class FmDxSessionController(application: Application) {
     fun connectUsb() {
         if (_state.value.isConnecting) return
         val usbManager = appContext.getSystemService(Context.USB_SERVICE) as? UsbManager
-        val device = usbManager?.let { UsbTunerDiscovery.firstTuner(it) }
-        if (usbManager == null || device == null) {
+        val detected = usbManager?.let { UsbTunerDiscovery.detect(it) }
+        if (usbManager == null || detected == null) {
             _state.update {
                 it.copy(
                     errorMessage = "No USB tuner detected",
@@ -147,17 +147,23 @@ class FmDxSessionController(application: Application) {
             }
             return
         }
+        val device = detected.device
         if (_state.value.isConnected) teardownConnections()
-        val label = "usb://${device.productName ?: device.deviceName}"
-        beginConnecting(label, ConnectionType.USB, "Connecting to USB tuner…")
+        val label = "usb://${detected.displayName}"
+        _state.update { it.copy(usbHasAudio = detected.hasUsbAudio) }
+        beginConnecting(label, ConnectionType.USB, "Connecting to ${detected.displayName}…")
         connectJob?.cancel()
         connectJob = scope.launch {
             try {
                 val granted = UsbTunerDiscovery.ensurePermission(appContext, usbManager, device)
                 if (!granted) throw IOException("USB permission denied")
                 val info = TunerInfo(
-                    tunerName = device.productName ?: "USB Tuner",
-                    tunerDescription = "Directly attached FM-DX Tuner",
+                    tunerName = detected.displayName,
+                    tunerDescription = if (detected.hasUsbAudio) {
+                        "Headless TEF Tuner (control + USB audio)"
+                    } else {
+                        "Generic TEF (control + RDS, no USB audio)"
+                    },
                     antennaNames = emptyList(),
                     activeAntenna = 0
                 )
@@ -291,7 +297,8 @@ class FmDxSessionController(application: Application) {
                 stationLogoUrl = FmDxRepository.DEFAULT_LOGO_URL,
                 serverLatencyMs = null,
                 pendingFrequencyMHz = null,
-                connectionType = ConnectionType.SERVER
+                connectionType = ConnectionType.SERVER,
+                usbHasAudio = false
             )
         }
     }
@@ -511,5 +518,6 @@ data class FmDxSessionState(
     val antennas: List<String> = emptyList(),
     val stationLogoUrl: String? = FmDxRepository.DEFAULT_LOGO_URL,
     val serverLatencyMs: Double? = null,
-    val pendingFrequencyMHz: Double? = null
+    val pendingFrequencyMHz: Double? = null,
+    val usbHasAudio: Boolean = false
 )

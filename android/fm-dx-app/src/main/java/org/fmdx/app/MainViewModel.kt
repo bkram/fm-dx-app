@@ -103,6 +103,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isSpectrumAvailable = local.isSpectrumAvailable,
                 preferDirectMode = local.preferDirectMode,
                 usbTunerName = local.usbTunerName,
+                usbHasAudio = session.usbHasAudio,
                 playAudioByDefault = local.playAudioByDefault
             )
         }.stateIn(
@@ -147,9 +148,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Reflect whether a supported TEF USB tuner is currently attached, for the Connect screen. */
     private fun refreshUsbTunerPresence() {
-        val name = usbManager?.let { mgr ->
-            UsbTunerDiscovery.firstTuner(mgr)?.let { it.productName ?: it.deviceName }
-        }
+        val name = usbManager?.let { UsbTunerDiscovery.detect(it)?.displayName }
         _localState.update { it.copy(usbTunerName = name) }
     }
 
@@ -343,7 +342,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (connectionType) {
             ConnectionType.SERVER -> refreshAudioStream(forcePlay = true)
             ConnectionType.USB -> {
-                if (usbAudioEngine.hasRecordPermission() && usbAudioEngine.findUsbAudioInput() != null) {
+                if (uiState.value.usbHasAudio &&
+                    usbAudioEngine.hasRecordPermission() &&
+                    usbAudioEngine.findUsbAudioInput() != null
+                ) {
                     UsbAudioService.start(getApplication())
                     _localState.update { it.copy(audioPlaying = true) }
                 }
@@ -355,6 +357,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (uiState.value.audioPlaying) {
             UsbAudioService.stop(getApplication())
             _localState.update { it.copy(audioPlaying = false) }
+            return
+        }
+        if (!uiState.value.usbHasAudio) {
+            // Only the Headless TEF Tuner exposes a USB audio interface; a Generic TEF is
+            // control + RDS only.
+            _localState.update {
+                it.copy(errorMessage = "This tuner has no USB audio output (Generic TEF)")
+            }
             return
         }
         if (!usbAudioEngine.hasRecordPermission()) {
@@ -785,6 +795,7 @@ data class UiState(
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
     val isSpectrumAvailable: Boolean = false,
     val usbTunerName: String? = null,
+    val usbHasAudio: Boolean = false,
     val playAudioByDefault: Boolean = false
 )
 

@@ -8,39 +8,59 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import androidx.core.content.ContextCompat
+import com.hoho.android.usbserial.driver.UsbSerialProber
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * Enumerates USB-serial devices that could be an FM-DX Tuner and brokers the runtime USB permission
- * dialog. CDC-ACM detection is delegated to usb-serial-for-android's default prober.
+ * Kind of attached tuner:
+ * - [HEADLESS] — the composite "Headless TEF Tuner" (CDC-ACM + USB Audio, VID 0x1209 / PID 0x6687).
+ *   The only variant with a USB audio output.
+ * - [GENERIC] — any other USB-serial device (CH340, CP210x, CH9102, FTDI, native CDC on ESP32-S3,
+ *   …) that speaks the TEF/XDR line protocol. Control + RDS only; no USB audio.
  */
+enum class UsbTunerKind { HEADLESS, GENERIC }
+
+data class DetectedTuner(val device: UsbDevice, val kind: UsbTunerKind) {
+    val hasUsbAudio: Boolean get() = kind == UsbTunerKind.HEADLESS
+    val displayName: String
+        get() = when (kind) {
+            // Show the headless unit's official USB product name (e.g. "TEF668X Headless USB Tuner").
+            UsbTunerKind.HEADLESS ->
+                device.productName?.takeIf { it.isNotBlank() } ?: "TEF668X Headless USB Tuner"
+            UsbTunerKind.GENERIC -> "Generic TEF"
+        }
+}
+
 object UsbTunerDiscovery {
 
     private const val ACTION_USB_PERMISSION = "org.fmdx.app.action.USB_PERMISSION"
 
-    // Only the TEF668X Headless USB Tuner is supported — it is the build that exposes a USB Audio
-    // Class interface alongside CDC-ACM. VID 0x1209 (pid.codes / FMDX.org), PID 0x6687.
-    private const val TEF_VENDOR_ID = 0x1209
-    private const val TEF_PRODUCT_ID = 0x6687
+    // The Headless TEF Tuner enumerates as a composite CDC-ACM + USB-Audio device; it is the only
+    // variant with a USB audio output. Identify it by descriptor (no need to open it).
+    private const val HEADLESS_VENDOR_ID = 0x1209
+    private const val HEADLESS_PRODUCT_ID = 0x6687
 
     /**
-     * Attached TEF668X Headless USB tuners (CDC-ACM serial + USB audio). Detection is by USB
-     * descriptor over the raw device list rather than the serial prober — the prober does not
-     * reliably surface this composite (audio + CDC, IAD) device, and the transport falls back to
-     * an explicit [com.hoho.android.usbserial.driver.CdcAcmSerialDriver] anyway.
+     * Classify the first attached tuner candidate, preferring the audio-capable headless unit.
+     * Generic candidates are recognised USB-serial bridges; whether one is really a TEF is
+     * confirmed by querying the XDR protocol once connected.
      */
-    fun findTunerDevices(usbManager: UsbManager): List<UsbDevice> =
-        usbManager.deviceList.values.filter { it.isTefHeadlessTuner() }
-
-    private fun UsbDevice.isTefHeadlessTuner(): Boolean {
-        if (vendorId == TEF_VENDOR_ID && productId == TEF_PRODUCT_ID) return true
-        // Fallback for future firmware revisions that keep the descriptive product string.
-        val name = (productName ?: "").lowercase()
-        return name.contains("tef") && name.contains("headless")
+    fun detect(usbManager: UsbManager): DetectedTuner? {
+        usbManager.deviceList.values.firstOrNull { it.isHeadless() }
+            ?.let { return DetectedTuner(it, UsbTunerKind.HEADLESS) }
+        UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
+            .map { it.device }
+            .firstOrNull { !it.isHeadless() }
+            ?.let { return DetectedTuner(it, UsbTunerKind.GENERIC) }
+        return null
     }
 
-    fun firstTuner(usbManager: UsbManager): UsbDevice? = findTunerDevices(usbManager).firstOrNull()
+    private fun UsbDevice.isHeadless(): Boolean {
+        if (vendorId == HEADLESS_VENDOR_ID && productId == HEADLESS_PRODUCT_ID) return true
+        val name = (productName ?: "").lowercase()
+        return name.contains("headless") && name.contains("tef")
+    }
 
     /** Suspends until the user grants or denies USB permission for [device]. */
     suspend fun ensurePermission(

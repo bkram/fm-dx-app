@@ -418,7 +418,10 @@ private fun MainScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = onToggleAudio,
-                            enabled = state.isConnected
+                            // Audio is available over the server stream, or from a Headless TEF
+                            // Tuner's USB audio — but not from a Generic (control-only) TEF.
+                            enabled = state.isConnected &&
+                                (state.connectionType == ConnectionType.SERVER || state.usbHasAudio)
                         ) {
                             val playing = state.audioPlaying
                             val icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow
@@ -656,17 +659,17 @@ private fun AboutScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
-                    AboutLinkItem(icon = Icons.Filled.Code, label = githubLabel) {
+                    AboutLinkItem(Icons.Filled.Code, githubLabel, githubUrl) {
                         uriHandler.openUri(githubUrl)
                     }
-                    AboutLinkItem(icon = Icons.Filled.Dns, label = fmdxWebServerLabel) {
+                    AboutLinkItem(Icons.Filled.Dns, fmdxWebServerLabel, fmdxWebServerUrl) {
                         uriHandler.openUri(fmdxWebServerUrl)
                     }
-                    AboutLinkItem(icon = Icons.Filled.TravelExplore, label = tefLoggerLabel) {
+                    AboutLinkItem(Icons.Filled.TravelExplore, tefLoggerLabel, tefLoggerUrl) {
                         uriHandler.openUri(tefLoggerUrl)
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    AboutLinkItem(icon = Icons.Filled.Public, label = fmdxOrgSiteLabel) {
+                    AboutLinkItem(Icons.Filled.Public, fmdxOrgSiteLabel, fmdxOrgSiteUrl) {
                         uriHandler.openUri(fmdxOrgSiteUrl)
                     }
                 }
@@ -679,10 +682,18 @@ private fun AboutScreen(onBack: () -> Unit) {
 private fun AboutLinkItem(
     icon: ImageVector,
     label: String,
+    url: String,
     onClick: () -> Unit
 ) {
     ListItem(
         headlineContent = { Text(text = label) },
+        supportingContent = {
+            Text(
+                text = url,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
         leadingContent = {
             Icon(
                 imageVector = icon,

@@ -151,7 +151,7 @@
     <string name="server_info_latency">Latency</string>
     <string name="server_info_latency_value">%1$d ms</string>
     <string name="server_info_latency_unknown">--</string>
-    <string name="about_message">FM-DX App is an open-source Android client for FM-DX Webservers.</string>
+    <string name="about_message">FM-DX App is an open-source Android client for FM-DX Webservers and for TEF tuners connected directly over USB.</string>
     <string name="about_github_link" translatable="false">GitHub: FM-DX App</string>
     <string name="about_github_url">https://github.com/bkram/fm-dx-app</string>
     <string name="about_site_link">Visit fmdx.org</string>
