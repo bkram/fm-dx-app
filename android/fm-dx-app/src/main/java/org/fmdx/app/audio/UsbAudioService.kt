@@ -37,10 +37,6 @@ class UsbAudioService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopEngineAndSelf()
-            return START_NOT_STICKY
-        }
         ensureChannel()
         ServiceCompat.startForeground(
             this,
@@ -127,7 +123,6 @@ class UsbAudioService : Service() {
     companion object {
         private const val CHANNEL_ID = "usb_audio_v2"
         private const val NOTIFICATION_ID = 42
-        private const val ACTION_STOP = "org.fmdx.app.action.STOP_USB_AUDIO"
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
@@ -137,9 +132,9 @@ class UsbAudioService : Service() {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, UsbAudioService::class.java).setAction(ACTION_STOP)
-            )
+            // stopService is permitted from the background; starting a service with a STOP action
+            // is not (BackgroundServiceStartNotAllowedException on Android 12+).
+            context.stopService(Intent(context, UsbAudioService::class.java))
         }
     }
 }

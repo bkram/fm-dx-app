@@ -1,9 +1,13 @@
 package org.fmdx.app
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
@@ -32,9 +36,9 @@ import org.fmdx.app.audio.UsbAudioEngine
 import org.fmdx.app.audio.UsbAudioService
 import org.fmdx.app.audio.buildMediaItemForServer
 import org.fmdx.app.data.ConnectionType
-import org.fmdx.app.data.FmDxSessionController
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.data.SpectrumPluginEvent
+import org.fmdx.app.data.usb.UsbTunerDiscovery
 import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
@@ -97,7 +101,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 serverLatencyMs = session.serverLatencyMs,
                 publicServerPickerState = local.publicServerPickerState,
                 isSpectrumAvailable = local.isSpectrumAvailable,
-                preferDirectMode = local.preferDirectMode
+                preferDirectMode = local.preferDirectMode,
+                usbTunerName = local.usbTunerName
             )
         }.stateIn(
             scope = viewModelScope,
@@ -106,6 +111,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     private val usbAudioEngine = UsbAudioEngine(application)
+    private val usbManager = application.getSystemService(Context.USB_SERVICE) as? UsbManager
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = refreshUsbTunerPresence()
+    }
     private var pluginConnection: PluginConnection? = null
     private var spectrumScanFallbackJob: Job? = null
     private var publicServerJob: Job? = null
@@ -123,6 +132,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshBufferSettings()
         initializeMediaController()
         observeSessionForSpectrum()
+        registerUsbReceiver()
+        refreshUsbTunerPresence()
+    }
+
+    private fun registerUsbReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        ContextCompat.registerReceiver(app, usbReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    /** Reflect whether a supported TEF USB tuner is currently attached, for the Connect screen. */
+    private fun refreshUsbTunerPresence() {
+        val name = usbManager?.let { mgr ->
+            UsbTunerDiscovery.firstTuner(mgr)?.let { it.productName ?: it.deviceName }
+        }
+        _localState.update { it.copy(usbTunerName = name) }
     }
 
     private fun initializeMediaController() {
@@ -491,6 +518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        runCatching { app.unregisterReceiver(usbReceiver) }
         UsbAudioService.stop(getApplication())
         pluginConnection?.close()
         pluginConnection = null
@@ -701,7 +729,8 @@ private data class LocalUiState(
     val statusMessage: String? = null,
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
     val isSpectrumAvailable: Boolean = false,
-    val preferDirectMode: Boolean = false
+    val preferDirectMode: Boolean = false,
+    val usbTunerName: String? = null
 )
 
 data class UiState(
@@ -728,7 +757,8 @@ data class UiState(
     val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL,
     val serverLatencyMs: Double? = null,
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
-    val isSpectrumAvailable: Boolean = false
+    val isSpectrumAvailable: Boolean = false,
+    val usbTunerName: String? = null
 )
 
 data class PublicServerPickerState(

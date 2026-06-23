@@ -37,6 +37,4 @@ object XdrCommands {
     const val SHUTDOWN = "X"
 
     fun tune(kHz: Int): String = "T$kHz"
-    fun antenna(index: Int): String = "Z$index"
-    fun volume(percent: Int): String = "Y$percent"
 }

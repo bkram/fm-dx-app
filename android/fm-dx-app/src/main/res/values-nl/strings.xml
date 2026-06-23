@@ -51,8 +51,6 @@
     <string name="settings_restart_audio_on_tune">Audio opnieuw starten bij afstemmen</string>
     <string name="settings_pass_through_label">TEF Logger</string>
     <string name="settings_pass_through_desc">Verzend de metrics naar de TEF Logger. Standaard uitgeschakeld.</string>
-    <string name="settings_pass_through_enabled">Ingeschakeld</string>
-    <string name="settings_pass_through_disabled">Uitgeschakeld</string>
     <string name="settings_language_title">Taal</string>
     <string name="settings_language_auto">Systeemstandaard</string>
     <string name="pass_through_notification_channel">Pass-throughtelemetrie</string>
@@ -65,9 +63,9 @@
     <string name="direct_tuner_title">Directe tuner</string>
     <string name="direct_tuner_description">Verbind met een TEF668X Headless USB-tuner die op dit apparaat is aangesloten.</string>
     <string name="connect_usb_tuner">USB-tuner verbinden</string>
+    <string name="usb_tuner_not_detected">Geen USB-tuner gevonden</string>
     <string name="usb_audio_channel_name">USB-tuner-audio</string>
     <string name="usb_audio_notification_title">USB-tuner-audio</string>
-    <string name="usb_audio_notification_text">Audio van de aangesloten tuner speelt af</string>
     <string name="rds_audio_mode_stereo">Stereo</string>
     <string name="rds_audio_mode_mono">Mono</string>
     <string name="rds_audio_mode_content_description">Audiomodus: %1$s</string>

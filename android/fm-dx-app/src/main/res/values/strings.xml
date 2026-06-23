@@ -54,8 +54,6 @@
     <string name="settings_restart_audio_on_tune">Restart audio on tune</string>
     <string name="settings_pass_through_label">TEF Logger</string>
     <string name="settings_pass_through_desc">Send the metrics to the TEF Logger. Disabled by default.</string>
-    <string name="settings_pass_through_enabled">Enabled</string>
-    <string name="settings_pass_through_disabled">Disabled</string>
     <string name="settings_language_title">Language</string>
     <string name="settings_language_auto">System default</string>
     <string name="spectrum_band_oirt" translatable="false">OIRT</string>
@@ -71,9 +69,9 @@
     <string name="direct_tuner_title">Direct tuner</string>
     <string name="direct_tuner_description">Connect to a TEF668X Headless USB Tuner plugged into this device.</string>
     <string name="connect_usb_tuner">Connect USB tuner</string>
+    <string name="usb_tuner_not_detected">No USB tuner detected</string>
     <string name="usb_audio_channel_name">USB tuner audio</string>
     <string name="usb_audio_notification_title">USB tuner audio</string>
-    <string name="usb_audio_notification_text">Playing audio from the attached tuner</string>
     <string name="default_value" translatable="false"> </string>
     <string name="rds_ps_label" translatable="false">PS: </string>
     <string name="rds_audio_mode_chip_label_stereo" translatable="false">ST</string>

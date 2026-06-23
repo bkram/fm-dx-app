@@ -1,6 +1,7 @@
 package org.fmdx.app.audio
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -129,6 +130,8 @@ class UsbAudioEngine(private val context: Context) {
         }
     }
 
+    // Callers (start()) verify RECORD_AUDIO via hasRecordPermission() before reaching here.
+    @SuppressLint("MissingPermission")
     private fun buildRecorder(bufferSize: Int): AudioRecord? {
         // UNPROCESSED preserves the line audio (no AGC/noise suppression); fall back to MIC.
         for (source in intArrayOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)) {
