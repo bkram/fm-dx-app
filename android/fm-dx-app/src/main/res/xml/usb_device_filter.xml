@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Only match the TEF668X Headless USB Tuner so Android offers to launch the app when it (and
+      only it) is attached. VID 0x1209 = 4617 (FMDX.org), PID 0x6687 = 26247.
+    -->
+    <usb-device vendor-id="4617" product-id="26247" />
+</resources>

@@ -66,6 +66,14 @@
     <string name="pass_through_notification_message">Sending UDP telemetry for %1$s</string>
     <string name="main_title">FM-DX App</string>
     <string name="server_url">Server URL</string>
+    <string name="connection_mode_remote">Remote server</string>
+    <string name="connection_mode_direct">Direct / USB</string>
+    <string name="direct_tuner_title">Direct tuner</string>
+    <string name="direct_tuner_description">Connect to a TEF668X Headless USB Tuner plugged into this device.</string>
+    <string name="connect_usb_tuner">Connect USB tuner</string>
+    <string name="usb_audio_channel_name">USB tuner audio</string>
+    <string name="usb_audio_notification_title">USB tuner audio</string>
+    <string name="usb_audio_notification_text">Playing audio from the attached tuner</string>
     <string name="default_value" translatable="false"> </string>
     <string name="rds_ps_label" translatable="false">PS: </string>
     <string name="rds_audio_mode_chip_label_stereo" translatable="false">ST</string>
@@ -157,11 +165,11 @@
     <string name="about_teflogger_url">https://github.com/highpoint2000/TEFLoggerapp</string>
     <string name="help_tab_title">Help</string>
     <string name="help_getting_started_title">Getting started</string>
-    <string name="help_getting_started_description">Enter your FM-DX WebServer URL on the Connection tab (or choose one via Browse public servers), tap Connect, and wait for the status to show Connected. Save frequently used URLs in the Recent list for quicker access.</string>
+    <string name="help_getting_started_description">The Connection tab has two modes. Remote server: enter an FM-DX WebServer URL (or pick one via Browse public servers) and tap Connect. Direct / USB: plug a TEF668X Headless USB Tuner into this phone with a USB-C/OTG cable and tap Connect USB tuner, then allow the USB and microphone prompts. Your last mode and frequency are remembered.</string>
     <string name="help_tuning_title">Tuning &amp; audio</string>
-    <string name="help_tuning_description">Use the Tuner tab to pick a frequency, antenna, and audio options. The play button in the top bar starts or stops audio playback at any time.</string>
+    <string name="help_tuning_description">Use the Tuner tab to pick a frequency and toggle CEQ, IMS and stereo/mono. The play button in the top bar starts or stops audio. On a USB tuner the audio comes from the tuner\'s own USB sound interface and keeps playing with the screen off.</string>
     <string name="help_troubleshooting_title">Troubleshooting</string>
-    <string name="help_troubleshooting_description">If tuning fails, double-check the server URL and network connection. Try reconnecting from the Connection tab or restart the app to clear stale sessions.</string>
+    <string name="help_troubleshooting_description">Remote: double-check the server URL and your network. USB: if no tuner is detected, reseat the OTG cable and confirm it is a TEF668X Headless tuner; if there is no sound, grant the microphone permission (Android gates USB audio behind it). Reconnect from the Connection tab to clear a stale session.</string>
     <string name="help_more_support_title">Need more help?</string>
     <string name="help_more_support_description">Join the FMDX.org Discord for live help, or contact your tuner host for server access details.</string>
     <string name="help_more_support_link">Open FMDX.org Discord</string>

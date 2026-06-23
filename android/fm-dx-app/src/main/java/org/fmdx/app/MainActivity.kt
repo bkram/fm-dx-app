@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.fmdx.app.data.ConnectionType
 import org.fmdx.app.ui.theme.FmDxTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +40,10 @@ class MainActivity : ComponentActivity() {
                 ActivityResultContracts.RequestPermission()
             ) { /* Foreground service still runs even if denied; ignore. */ }
 
+            val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { /* If denied, the USB audio toggle reports the missing permission. */ }
+
             LaunchedEffect(Unit) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val granted = ContextCompat.checkSelfPermission(
@@ -47,6 +52,19 @@ class MainActivity : ComponentActivity() {
                     ) == PackageManager.PERMISSION_GRANTED
                     if (!granted) {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
+
+            // A directly attached USB tuner needs RECORD_AUDIO to capture its USB-audio output.
+            LaunchedEffect(state.isConnected, state.connectionType) {
+                if (state.isConnected && state.connectionType == ConnectionType.USB) {
+                    val granted = ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!granted) {
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
             }
@@ -64,6 +82,8 @@ class MainActivity : ComponentActivity() {
                     onUpdateUrl = viewModel::updateServerUrl,
                     onConnect = viewModel::connect,
                     onDisconnect = viewModel::disconnect,
+                    onConnectUsb = viewModel::connectUsb,
+                    onSetConnectionMode = viewModel::setPreferredConnectionMode,
                     onToggleAudio = viewModel::toggleAudio,
                     onTuneDirect = viewModel::tuneToFrequency,
                     onToggleEq = viewModel::toggleEq,

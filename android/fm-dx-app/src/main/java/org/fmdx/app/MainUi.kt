@@ -70,6 +70,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -128,6 +131,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -143,7 +147,10 @@ import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.fmdx.app.data.ConnectionType
 import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -174,6 +181,8 @@ internal fun FmDxApp(
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onConnectUsb: () -> Unit,
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onToggleAudio: () -> Unit,
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
@@ -202,6 +211,7 @@ internal fun FmDxApp(
         { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
     }
     val hConnect = { hapticTap(); onConnect() }
+    val hConnectUsb = { hapticTap(); onConnectUsb() }
     val hDisconnect = { hapticTap(); onDisconnect() }
     val hToggleAudio = { hapticTap(); onToggleAudio() }
     val hToggleEq = { hapticTap(); onToggleEq() }
@@ -235,6 +245,8 @@ internal fun FmDxApp(
                 onUpdateUrl = onUpdateUrl,
                 onConnect = hConnect,
                 onDisconnect = hDisconnect,
+                onConnectUsb = hConnectUsb,
+                onSetConnectionMode = onSetConnectionMode,
                 onToggleAudio = hToggleAudio,
                 onTuneDirect = hTuneDirect,
                 onToggleEq = hToggleEq,
@@ -266,6 +278,8 @@ private fun MainScreen(
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onConnectUsb: () -> Unit = {},
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onToggleAudio: () -> Unit,
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
@@ -300,11 +314,13 @@ private fun MainScreen(
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                     onShowPublicServerPicker = onShowPublicServerPicker,
+                    onConnectUsb = onConnectUsb,
+                    onSetConnectionMode = onSetConnectionMode,
                     onRemoveRecentServer = onRemoveRecentServer
                 )
             }
         )
-        if (state.isConnected) {
+        if (state.isConnected && state.connectionType == ConnectionType.SERVER) {
             add(
                 SectionTab(
                     titleRes = R.string.server_info_tab_title,
@@ -356,20 +372,22 @@ private fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
-    LaunchedEffect(state.isConnected, tabs.size) {
+    LaunchedEffect(state.isConnected) {
         if (!state.isConnected) {
             pagerState.scrollToPage(0)
-        } else {
-            if (pagerState.currentPage >= tabs.size) {
-                pagerState.scrollToPage(tabs.lastIndex)
-                return@LaunchedEffect
-            }
-            if (pagerState.currentPage == 0) {
-                val tunerPageIndex = tabs.indexOfFirst { it.titleRes == R.string.tuner }
-                if (tunerPageIndex != -1) {
-                    pagerState.animateScrollToPage(tunerPageIndex)
-                }
-            }
+            return@LaunchedEffect
+        }
+        // On a fresh connection, surface the Tuner tab. The tab list grows the
+        // moment isConnected flips, but PagerState.pageCount only refreshes on the
+        // next measure pass — so wait for the new pages to register before
+        // scrolling, otherwise animateScrollToPage clamps to the stale page count
+        // and we never reach the Tuner. Keying this effect on isConnected only
+        // (not tabs.size) also stops a later spectrum-availability change from
+        // cancelling the in-flight scroll animation.
+        val tunerPageIndex = tabs.indexOfFirst { it.titleRes == R.string.tuner }
+        if (tunerPageIndex > 0) {
+            snapshotFlow { pagerState.pageCount }.first { it > tunerPageIndex }
+            pagerState.animateScrollToPage(tunerPageIndex)
         }
     }
 
@@ -392,7 +410,10 @@ private fun MainScreen(
                             isConnecting = state.isConnecting
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = onToggleAudio, enabled = state.isConnected) {
+                        IconButton(
+                            onClick = onToggleAudio,
+                            enabled = state.isConnected
+                        ) {
                             val playing = state.audioPlaying
                             val icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow
                             Icon(
@@ -469,6 +490,7 @@ private fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .imePadding()
                             .padding(16.dp)
                     ) {
                         val scrollState = rememberScrollState()
@@ -534,6 +556,7 @@ private fun SettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .imePadding()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -835,6 +858,8 @@ private fun ConnectionSection(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onShowPublicServerPicker: () -> Unit,
+    onConnectUsb: () -> Unit = {},
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onRemoveRecentServer: (String) -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
@@ -843,7 +868,24 @@ private fun ConnectionSection(
         onConnect()
     }
 
+    // Selected segment is the user's remembered preference (persisted across restarts).
+    val mode = if (state.preferDirectMode) ConnectionMode.DIRECT else ConnectionMode.REMOTE
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = mode == ConnectionMode.REMOTE,
+                onClick = { onSetConnectionMode(false) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            ) { Text(stringResource(id = R.string.connection_mode_remote)) }
+            SegmentedButton(
+                selected = mode == ConnectionMode.DIRECT,
+                onClick = { onSetConnectionMode(true) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+            ) { Text(stringResource(id = R.string.connection_mode_direct)) }
+        }
+
+        if (mode == ConnectionMode.REMOTE) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -952,6 +994,58 @@ private fun ConnectionSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+        } else {
+            DirectTunerCard(
+                state = state,
+                onConnectUsb = {
+                    focusManager.clearFocus(force = true)
+                    onConnectUsb()
+                }
+            )
+            // Disconnect control for an active direct (USB) connection.
+            if (state.isConnected && state.connectionType != ConnectionType.SERVER) {
+                Button(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.disconnect))
+                }
+            }
+        }
+    }
+}
+
+private enum class ConnectionMode { REMOTE, DIRECT }
+
+@Composable
+private fun DirectTunerCard(
+    state: UiState,
+    onConnectUsb: () -> Unit
+) {
+    val canConnect = !state.isConnected && !state.isConnecting
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.direct_tuner_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(id = R.string.direct_tuner_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onConnectUsb,
+                enabled = canConnect,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(id = R.string.connect_usb_tuner))
             }
         }
     }
@@ -1428,12 +1522,15 @@ private fun FrequencyControlsCard(
     }
 
     LaunchedEffect(minKHz, maxKHz, stepKHz) {
-        snapshotFlow { selectedMHz to selectedDecimalIndex }
+        snapshotFlow { Triple(selectedMHz, selectedDecimalIndex, isUserInteracting) }
+            // Only tune in response to the user spinning the picker. Without this gate the
+            // programmatic sync (above) emits a spurious tune to the band minimum on connect —
+            // which fought the USB restore frequency and polluted the cached frequency.
+            .filter { it.third }
             .debounce(400)
-            .collectLatest { (mhz, decimalIndex) ->
-                val requestedKHz = mhz * 1000 + decimalIndex * stepKHz
-                val clampedKHz = requestedKHz.coerceIn(minKHz, maxKHz)
-                onTuneDirect(clampedKHz / 1000.0)
+            .collectLatest { (mhz, decimalIndex, _) ->
+                val requestedKHz = (mhz * 1000 + decimalIndex * stepKHz).coerceIn(minKHz, maxKHz)
+                onTuneDirect(requestedKHz / 1000.0)
             }
     }
 
@@ -1976,6 +2073,8 @@ private fun ControlButtons(
     val imsActive = state.tunerState?.ims == true
     val eqActive = state.tunerState?.eq == true
     val isStereoForced = state.tunerState?.stereoForced == true
+    // CEQ (FM_Set_ChannelEqualizer) and IMS (FM_Set_MphSuppression) are native TEF668X DSP
+    // features driven by the `G<eq><ims>` command, so they work on USB too.
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -2252,11 +2351,14 @@ private fun InformationSection(
     currentPty: (TunerState?) -> String
 ) {
     val tuner = state.tunerState
+    // The station logo, ECC/country, AF list and transmitter database lookup are all provided by
+    // fm-dx-webserver; a direct USB / xdrd tuner only yields the natively decoded RDS fields.
+    val webExtras = state.connectionType == ConnectionType.SERVER
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (!state.stationLogoUrl.isNullOrBlank()) {
+        if (webExtras && !state.stationLogoUrl.isNullOrBlank()) {
             StationLogo(state.stationLogoUrl)
         }
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -2265,7 +2367,7 @@ private fun InformationSection(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 RdsPsPiContent(tuner)
-                RdsPtyEccContent(tuner, currentPty)
+                RdsPtyEccContent(tuner, currentPty, showEcc = webExtras)
                 RdsFlagsRow(tuner)
                 val country = tuner?.countryName ?: tuner?.countryIso
                 if (!country.isNullOrBlank()) {
@@ -2294,36 +2396,44 @@ private fun InformationSection(
                         )
                     }
                 }
-                val afText = tuner?.afList?.size?.let { count ->
-                    pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
-                } ?: stringResource(id = R.string.none)
-                RdsLabelValueRow(
-                    label = stringResource(
-                        id = R.string.rds_af_label,
-                        ""
-                    )
-                ) { valueModifier ->
-                    Text(
-                        text = afText,
-                        modifier = valueModifier
-                    )
+                if (webExtras) {
+                    val afText = tuner?.afList?.size?.let { count ->
+                        pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
+                    } ?: stringResource(id = R.string.none)
+                    RdsLabelValueRow(
+                        label = stringResource(
+                            id = R.string.rds_af_label,
+                            ""
+                        )
+                    ) { valueModifier ->
+                        Text(
+                            text = afText,
+                            modifier = valueModifier
+                        )
+                    }
                 }
                 RdsRadiotextContent(tuner)
             }
         }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StationDetailsContent(state)
+        if (webExtras) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StationDetailsContent(state)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
+private fun RdsPtyEccContent(
+    tuner: TunerState?,
+    currentPty: (TunerState?) -> String,
+    showEcc: Boolean = true
+) {
     val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "   "
     val pty = currentPty(tuner).trimStart()
 
@@ -2336,16 +2446,17 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
         Spacer(Modifier.width(8.dp))
         Text(pty)
 
-        // Push right group to the edge
-        Spacer(Modifier.weight(1f))
-
-        // Right: ECC label (green) + value aligned to the right
-        RdsLabelText(text = stringResource(id = R.string.rds_ecc_label, ""))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = ecc,
-            textAlign = TextAlign.End
-        )
+        // Right: ECC label (green) + value — ECC isn't decoded on the raw protocol, so it is
+        // only shown for server connections that supply it.
+        if (showEcc) {
+            Spacer(Modifier.weight(1f))
+            RdsLabelText(text = stringResource(id = R.string.rds_ecc_label, ""))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = ecc,
+                textAlign = TextAlign.End
+            )
+        }
     }
 }
 

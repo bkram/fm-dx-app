@@ -100,6 +100,9 @@ dependencies {
     implementation 'androidx.media3:media3-extractor:1.10.0'
     implementation 'androidx.media3:media3-session:1.10.0'
 
+    // CDC-ACM serial driver for a directly attached USB FM-DX Tuner.
+    implementation 'com.github.mik3y:usb-serial-for-android:3.9.0'
+
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20251224'
 }
