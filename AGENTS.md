@@ -24,12 +24,15 @@ installed. (compile/target SDK is API 37; minSdk is API 29.)
   fail the build, warnings are baselined in `android/fm-dx-app/lint-baseline.xml`). Plain-text
   report at `android/fm-dx-app/build/reports/lint-results-debug.txt`. Regenerate the baseline by
   deleting it and re-running.
+- `./gradlew :fm-dx-app:detekt` — Kotlin static analysis (detekt + ktlint formatting rules +
+  Jetpack Compose rules). Config `config/detekt/detekt.yml`; existing findings are frozen in
+  `android/fm-dx-app/detekt-baseline.xml` (regenerate: delete it and run `detektBaseline`).
 - `npx markdownlint-cli2` — lint Markdown docs (config `.markdownlint-cli2.jsonc`; add `--fix` to
   auto-fix). Requires Node.
 - `./gradlew --stop` — kill Gradle / Kotlin daemons if the compile cache misbehaves.
 
 CI (`.github/workflows/android-ci.yml`) runs a **validate** job on every push — JVM unit tests,
-`lintDebug`, and markdownlint — before the build/release jobs. Keep all three green.
+`lintDebug`, `detekt`, and markdownlint — before the build/release jobs. Keep them all green.
 
 ## Architecture Overview
 

@@ -1,0 +1,42 @@
+# detekt configuration — overrides layered on top of the bundled default config
+# (build.gradle sets buildUponDefaultConfig = true). Run `./gradlew :fm-dx-app:detekt`.
+# Regenerate the baseline: delete android/fm-dx-app/detekt-baseline.xml and run
+# `./gradlew :fm-dx-app:detektBaseline`.
+
+# ktlint formatting rules (from detekt-formatting).
+formatting:
+  active: true
+  autoCorrect: true
+  MaximumLineLength:
+    maxLineLength: 120
+  # These fight idiomatic multi-line Compose calls; let the IDE/ktlint handle wrapping.
+  ArgumentListWrapping:
+    active: false
+  ParameterListWrapping:
+    active: false
+  Wrapping:
+    active: false
+
+# Jetpack Compose rules (io.nlopez.compose.rules:detekt).
+Compose:
+  active: true
+
+style:
+  MaxLineLength:
+    maxLineLength: 120
+  # Frequencies, RDS group bit masks, audio rates, etc. are inherently "magic".
+  MagicNumber:
+    active: false
+  ReturnCount:
+    max: 4
+
+complexity:
+  # Compose screens and protocol parsers are legitimately long / many-arg.
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  CyclomaticComplexMethod:
+    threshold: 20
+  TooManyFunctions:
+    active: false
