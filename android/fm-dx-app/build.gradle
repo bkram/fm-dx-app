@@ -67,6 +67,19 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
     }
+
+    lint {
+        // Fail the build on lint errors; keep warnings visible but non-fatal.
+        abortOnError = true
+        warningsAsErrors = false
+        checkDependencies = true
+        // These connect to the network / are advisory only — too flaky for CI.
+        disable += ['NewerVersionAvailable', 'GradleDependency']
+        // Stable, reviewable report locations.
+        textReport = true
+        htmlReport = true
+        baseline = file('lint-baseline.xml')
+    }
 }
 
 dependencies {

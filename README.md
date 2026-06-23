@@ -1,115 +1,105 @@
-# FMDX Android App
+# FM-DX Android App
 
-FMDX is the native Android companion for `fm-dx-webserver`, delivering the same control, monitoring,
-and spectrum visualisation features that ship with the console and Electron clients. The app is
-written in Kotlin with Jetpack Compose Material 3, ExoPlayer, and structured coroutines, and it
-requires Android 10 (API 29) or newer so every connection can negotiate TLS 1.3 without bundling a
-custom security provider.
+FM-DX App is a native Android client for FM-DX radio tuners. It connects **two ways**:
 
-## Overview
-- Configure and persist the server URL directly from the UI.
-- Stream audio via the `/audio` WebSocket.
-- Toggle iMS/EQ, cycle antennas, and adjust frequency with 10 kHz resolution.
-- Inspect real-time signal levels (dBf, dBµV, dBm), RDS/RadioText, and transmitter metadata.
-- Visualise spectrum data from the Spectrum Graph plugin and trigger scans when available.
-- Monitor connected user counts and live latency on the Server tab to spot congestion issues.
-- Mirror tuner telemetry to the TEF Logger app via the built-in pass-through option.
-- Browse the curated public FM-DX server list from `servers.fmdx.org` and connect without typing
-  URLs.
+1. **Remote server** — to an [`fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver)
+   instance over the network (control + audio + spectrum), the same experience as the console and
+   Electron clients.
+2. **Direct / USB** — to a **TEF668X Headless USB Tuner**
+   ([FM-DX Tuner](https://github.com/kkonradpl/FM-DX-Tuner) firmware) plugged straight into the
+   phone with a USB-C/OTG cable: tuning and RDS over the tuner's CDC-ACM serial port, and audio from
+   the tuner's own USB Audio Class output.
 
-## Prerequisites
+The app is written in Kotlin with Jetpack Compose Material 3, Media3/ExoPlayer, and structured
+coroutines. It targets Android 10 (API 29) and newer.
 
-This app talks to a [FM-DX Webserver](https://github.com/NoobishSVK/fm-dx-webserver). To see the
-full UI (logos and spectrum graph) make sure the
-remote server has the following plugins installed and enabled:
+## Features
+
+- **Remote or Direct connection** — pick "Remote server" or "Direct / USB" on the Connection
+  screen; the choice and the last-used frequency are remembered.
+- Tune with 10 kHz resolution via the frequency wheel; toggle **CEQ**, **IMS**, and **stereo/mono**.
+- Real-time signal levels (dBf, dBµV, dBm), stereo pilot, and RDS — PS, PI, RadioText, PTY, TP/TA,
+  MS and the decoder-identification (DI) flags.
+- Stream audio: from the server's `/audio` WebSocket (Remote), or captured from the tuner's USB
+  audio interface and kept playing with the screen off (Direct).
+- Spectrum visualisation and scanning, station logos, transmitter metadata, connected-user count
+  and live latency — **Remote (fm-dx-webserver) only**.
+- Mirror tuner telemetry to the TEF Logger app via the built-in UDP pass-through option.
+- Browse the curated public FM-DX server list from `servers.fmdx.org`.
+
+## Direct USB tuner
+
+- Hardware: a **TEF668X Headless USB Tuner** (USB VID `0x1209` / PID `0x6687`) — the FM-DX Tuner
+  firmware build that exposes a composite **CDC-ACM serial + USB Audio** device. Other USB-serial
+  devices are intentionally ignored.
+- Connect it to the phone with a USB-C / OTG adapter, open **Connection → Direct / USB**, and tap
+  **Connect USB tuner**. The card shows live "detected / not detected" status.
+- Approve the **USB permission** prompt, and the **microphone** prompt the first time you play audio
+  (Android gates USB-audio capture behind `RECORD_AUDIO`; it is the tuner's line audio, not the
+  built-in mic).
+- Control uses the XDR/xdrd line protocol directly over serial; no `fm-dx-webserver` or `xdrd`
+  daemon is involved. Server-only features (spectrum, logos, transmitter database, public-server
+  list, server diagnostics) are hidden in this mode.
+
+## Remote server prerequisites
+
+The Remote mode talks to an [`fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver). For
+the full experience (logos and spectrum) the host should have:
 
 - [Spectrum Graph plugin](https://github.com/AmateurAudioDude/FM-DX-Webserver-Plugin-Spectrum-Graph)
 - [Station logo plugin](https://github.com/Highpoint2000/webserver-station-logos)
 
-Without them the spectrum tab and station artwork will fall back to placeholder content.
+Without them the spectrum tab and station artwork fall back to placeholder content.
 
-## Requirements
-- JDK 21 (matching the module’s Java toolchain).
-- Android SDK preview packages for API 36.1:
-  - `platforms;android-36.1`
-  - `build-tools;36.1.0`
-  - `platform-tools`
+## Build requirements
+
+- JDK 21 (matching the module's Java toolchain).
+- Android SDK with `platforms;android-37`, `platform-tools`, and `build-tools` (the module compiles
+  against API 37; `build-tools;36.1.0` is the currently used package).
 - `ANDROID_HOME` or `ANDROID_SDK_ROOT` pointing at the SDK.
-- Device or emulator on Android 10+ (API 29+) to guarantee TLS 1.3.
+- A device or emulator on Android 10+ (API 29+). Note: USB host (OTG) is required to use a direct
+  USB tuner — the Android **emulator cannot pass through USB**, so the Direct mode can only be
+  exercised on physical hardware.
 
 Install missing SDK packages with `sdkmanager`:
 
 ```bash
-sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
-  "platforms;android-36.1" \
-  "build-tools;36.1.0" \
-  "platform-tools"
+sdkmanager --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-37" "platform-tools" "build-tools;36.1.0"
 ```
 
-## Command-Line Workflow
-1. Prime the Gradle wrapper (downloads the configured distribution if absent):
-   ```bash
-   ./gradlew --version
-   ```
-2. Assemble the debug APK:
-   ```bash
-   ./gradlew :fm-dx-app:assembleDebug
-   ```
-   The APK is written to `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`.
-3. (Optional) Install to a connected device or emulator:
-   ```bash
-   ./gradlew :fm-dx-app:installDebug
-   adb shell am start -n org.fmdx.app/.MainActivity
-   ```
-4. Stop Gradle daemons if cache/daemon errors occur:
-   ```bash
-   ./gradlew --stop
-   ```
+## Command-line workflow
+
+1. Prime the Gradle wrapper: `./gradlew --version`
+2. Assemble the debug APK: `./gradlew :fm-dx-app:assembleDebug`
+   (output: `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`)
+3. Install to a device/emulator: `./gradlew :fm-dx-app:installDebug` then
+   `adb shell am start -n org.fmdx.app/.MainActivity`
+4. Stop daemons on cache errors: `./gradlew --stop`
 
 ## Android Studio
-1. Open Android Studio and choose **File → Open…**.
-2. Select the repository root (`fm-dx-app`). Studio detects the `fm-dx-app` module located at
-   `android/fm-dx-app`.
-3. Let Gradle sync against the API 36.1 SDK.
-4. Choose a device running Android 10+ and press **Run**.
 
-## Configuration
-
-- On first launch, either enter the [
-  `fm-dx-webserver`](https://github.com/NoobishSVK/fm-dx-webserver)
-  base URL (e.g. `https://radio-host:8080/`) or tap **Browse public servers** to pick a curated
-  host.
-  The app normalises the URL and establishes both control and plugin WebSocket connections.
-- Audio playback exposed by the server.
-- Spectrum scanning mirrors the behaviour of the FM-DX Webserver and requires the Spectrum Graph
-  plugin on the server.
-- The Server card surfaces diagnostics (user count, round-trip latency) once connected so you can
-  confirm the host’s health before tuning.
-- Enable **TEF Logger** in Settings to stream UDP telemetry to the TEF Logger Android app (running
-  on the same device) while the tuner is connected.
+1. **File → Open…** the repository root; Studio detects the `fm-dx-app` module at `android/fm-dx-app`.
+2. Let Gradle sync against the API 37 SDK.
+3. Pick a device on Android 10+ and press **Run**.
 
 ## Testing
-- Run JVM unit tests with:
-  ```bash
-  ./gradlew test
-  ```
-- Execute instrumentation tests (device/emulator required) with:
-  ```bash
-  ./gradlew connectedDebugAndroidTest
-  ```
+
+- JVM unit tests: `./gradlew :fm-dx-app:test`
+  (reports under `android/fm-dx-app/build/reports/tests/testDebugUnitTest/index.html`).
+- Instrumentation tests (device/emulator): `./gradlew connectedDebugAndroidTest`.
 
 ## Docker / CI
-For containerised builds, `docker-build.sh` documents the Debian-based workflow used in CI. The
-script installs JDK 21, the Android command-line tools, the API 36.1 SDK components, and then calls:
 
-```bash
-./gradlew --version
-./gradlew :fm-dx-app:assembleDebug
-```
-
-Persist the SDK directory between runs to avoid repeated downloads.
+For containerised builds, `docker-build.sh` documents the Debian workflow: install JDK 21, the
+Android command-line tools and the API 37 SDK components, then
+`./gradlew :fm-dx-app:assembleDebug`. Persist the SDK directory between runs.
 
 ## Troubleshooting
-- Ensure the host TLS endpoint supports TLS 1.3; earlier protocol versions cause the app to abort.
-- Verify the preview SDK paths if Gradle cannot locate Android 36.1.
-- Clear Gradle caches only as a last resort; prefer `./gradlew --stop` to restart daemons.
+
+- **Remote**: ensure the host endpoint negotiates TLS 1.3 (HTTPS hosts); HTTP/cleartext hosts are
+  supported for local servers.
+- **Direct / USB — "No USB tuner detected"**: reseat the OTG cable and confirm it is a TEF668X
+  Headless tuner (VID `0x1209` / PID `0x6687`). The phone's single USB-C port can't be cabled to a
+  computer and the tuner at the same time — use wireless debugging while testing the tuner.
+- **Direct / USB — no sound**: grant the microphone permission.
+- Prefer `./gradlew --stop` over clearing Gradle caches when daemons misbehave.

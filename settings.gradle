@@ -17,7 +17,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         // usb-serial-for-android (CDC-ACM driver for the directly attached FM-DX Tuner)
-        maven { url 'https://jitpack.io' }
+        maven { url = 'https://jitpack.io' }
     }
 }
 

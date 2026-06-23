@@ -1,0 +1,22 @@
+{
+  // markdownlint-cli2 config — run locally with `npx markdownlint-cli2` (Node available),
+  // and in CI via the markdownlint-cli2 action. See https://github.com/DavidAnson/markdownlint-cli2
+  "config": {
+    "default": true,
+    // Prose in this repo wraps at ~100 cols but tables/links exceed it; don't enforce a hard limit.
+    "MD013": false,
+    // Allow inline HTML (badges, <br>, details) where needed.
+    "MD033": false,
+    // First line need not be a top-level heading (some docs start with frontmatter/intro).
+    "MD041": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "**/node_modules/**",
+    "**/build/**",
+    "gradle/**",
+    ".git/**",
+    "CLAUDE.md",
+    ".aider*"
+  ]
+}
