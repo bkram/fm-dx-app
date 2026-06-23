@@ -1,10 +1,7 @@
 package org.fmdx.app.telemetry
 
 import android.content.Context
-import android.content.SharedPreferences
-import android.net.Uri
 import android.os.Handler
-import androidx.core.content.edit
 import androidx.core.net.toUri
 import android.os.Looper
 import android.util.Log
@@ -22,8 +19,6 @@ class GpsWebViewHelper(
     companion object {
         private const val TAG = "GpsWebViewHelper"
     }
-
-    private val prefsName: String = "gps_cache"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingStopCallback: Runnable? = null
@@ -115,33 +110,6 @@ class GpsWebViewHelper(
             "$host:$port"
         } catch (_: Exception) {
             trimmed
-        }
-    }
-
-    private fun prefs(): SharedPreferences =
-        context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-
-    private fun saveGpsToPrefs(lat: String, lon: String, alt: String, mode: String) {
-        prefs().edit {
-            putString("qth_lat", lat)
-            putString("qth_lon", lon)
-            putString("qth_alt", alt)
-            putString("qth_mode", mode)
-        }
-    }
-
-    private fun saveGpsToPrefsForHost(
-        hostKey: String,
-        lat: String,
-        lon: String,
-        alt: String,
-        mode: String
-    ) {
-        prefs().edit {
-            putString("qth_lat_$hostKey", lat)
-            putString("qth_lon_$hostKey", lon)
-            putString("qth_alt_$hostKey", alt)
-            putString("qth_mode_$hostKey", mode)
         }
     }
 

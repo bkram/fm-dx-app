@@ -1,9 +1,13 @@
 package org.fmdx.app
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
@@ -28,10 +32,13 @@ import org.fmdx.app.audio.DEFAULT_NETWORK_BUFFER_CHUNKS
 import org.fmdx.app.audio.DEFAULT_PLAYER_BUFFER_MS
 import org.fmdx.app.audio.MAX_NETWORK_BUFFER_CHUNKS
 import org.fmdx.app.audio.PlaybackService
+import org.fmdx.app.audio.UsbAudioEngine
+import org.fmdx.app.audio.UsbAudioService
 import org.fmdx.app.audio.buildMediaItemForServer
-import org.fmdx.app.data.FmDxSessionController
+import org.fmdx.app.data.ConnectionType
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.data.SpectrumPluginEvent
+import org.fmdx.app.data.usb.UsbTunerDiscovery
 import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import org.fmdx.app.model.SpectrumPoint
@@ -66,7 +73,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<UiState> =
         combine(sessionController.state, _localState) { session, local ->
             UiState(
-                serverUrl = local.pendingServerUrl ?: session.serverUrl,
+                // The editable field only ever holds a real server URL; transport labels
+                // (usb://… / xdrd://…) are the live connection identity, not something to type.
+                serverUrl = local.pendingServerUrl
+                    ?: session.serverUrl.takeUnless {
+                        it.startsWith("usb://") || it.startsWith("xdrd://")
+                    }.orEmpty(),
+                connectionType = session.connectionType,
                 recentServerUrls = local.recentServerUrls,
                 tunerInfo = session.tunerInfo,
                 tunerState = session.tunerState,
@@ -87,7 +100,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 stationLogoUrl = session.stationLogoUrl,
                 serverLatencyMs = session.serverLatencyMs,
                 publicServerPickerState = local.publicServerPickerState,
-                isSpectrumAvailable = local.isSpectrumAvailable
+                isSpectrumAvailable = local.isSpectrumAvailable,
+                preferDirectMode = local.preferDirectMode,
+                usbTunerName = local.usbTunerName,
+                playAudioByDefault = local.playAudioByDefault
             )
         }.stateIn(
             scope = viewModelScope,
@@ -95,6 +111,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = UiState(spectrum = baselineSpectrum())
         )
 
+    private val usbAudioEngine = UsbAudioEngine(application)
+    private val usbManager = application.getSystemService(Context.USB_SERVICE) as? UsbManager
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = refreshUsbTunerPresence()
+    }
     private var pluginConnection: PluginConnection? = null
     private var spectrumScanFallbackJob: Job? = null
     private var publicServerJob: Job? = null
@@ -112,6 +133,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshBufferSettings()
         initializeMediaController()
         observeSessionForSpectrum()
+        registerUsbReceiver()
+        refreshUsbTunerPresence()
+    }
+
+    private fun registerUsbReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        ContextCompat.registerReceiver(app, usbReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    /** Reflect whether a supported TEF USB tuner is currently attached, for the Connect screen. */
+    private fun refreshUsbTunerPresence() {
+        val name = usbManager?.let { mgr ->
+            UsbTunerDiscovery.firstTuner(mgr)?.let { it.productName ?: it.deviceName }
+        }
+        _localState.update { it.copy(usbTunerName = name) }
     }
 
     private fun initializeMediaController() {
@@ -139,18 +178,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (session.isConnected && session.serverUrl != lastUrl) {
                     lastUrl = session.serverUrl
                     pluginConnection?.close()
-                    pluginConnection = repository.connectPlugin(
-                        baseUrl = session.serverUrl,
-                        userAgent = BuildConfig.USER_AGENT,
-                        onEvent = { event -> handleSpectrumEvent(session.serverUrl, event) }
-                    ) { error ->
-                        logDebug("plugin socket: error", error)
-                        _localState.update { it.copy(errorMessage = error.message) }
+                    pluginConnection = null
+                    // The Spectrum Graph plugin socket is an fm-dx-webserver feature; USB / xdrd
+                    // tuners have no HTTP server, so skip it (and the spectrum tab) for them.
+                    if (session.connectionType == ConnectionType.SERVER) {
+                        pluginConnection = repository.connectPlugin(
+                            baseUrl = session.serverUrl,
+                            userAgent = BuildConfig.USER_AGENT,
+                            onEvent = { event -> handleSpectrumEvent(session.serverUrl, event) }
+                        ) { error ->
+                            logDebug("plugin socket: error", error)
+                            _localState.update { it.copy(errorMessage = error.message) }
+                        }
+                        refreshSpectrum(session.serverUrl)
+                    } else {
+                        _localState.update { it.copy(isSpectrumAvailable = false) }
                     }
-                    refreshSpectrum(session.serverUrl)
                     updatePassThroughServiceState()
+                    maybeStartDefaultAudio(session.connectionType)
                 } else if (!session.isConnected && lastUrl != null) {
                     lastUrl = null
+                    UsbAudioService.stop(getApplication())
                     pluginConnection?.close()
                     pluginConnection = null
                     spectrumScanFallbackJob?.cancel()
@@ -221,7 +269,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         networkBuffer: Int,
         playerBuffer: Int,
         restartAudioOnTune: Boolean,
-        passThroughEnabled: Boolean
+        passThroughEnabled: Boolean,
+        playAudioByDefault: Boolean
     ) {
         val clampedNetwork = networkBuffer.coerceIn(
             DEFAULT_NETWORK_BUFFER_CHUNKS,
@@ -234,7 +283,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 networkBuffer = clampedNetwork,
                 playerBuffer = clampedPlayer,
                 restartAudioOnTune = restartAudioOnTune,
-                passThroughEnabled = passThroughEnabled
+                passThroughEnabled = passThroughEnabled,
+                playAudioByDefault = playAudioByDefault
             )
         }
         persistSettings(
@@ -242,7 +292,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             clampedNetwork,
             clampedPlayer,
             restartAudioOnTune,
-            passThroughEnabled
+            passThroughEnabled,
+            playAudioByDefault
         )
         updatePassThroughServiceState()
     }
@@ -260,6 +311,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Connect to a directly attached USB FM-DX Tuner. */
+    fun connectUsb() {
+        sessionController.connectUsb()
+    }
+
     fun disconnect() {
         sessionController.disconnect()
     }
@@ -267,12 +323,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleAudio() {
         val state = uiState.value
         if (!state.isConnected) return
-        val player = controller ?: return
-        if (player.isPlaying) {
-            player.pause()
-        } else {
-            refreshAudioStream(forcePlay = true)
+        when (state.connectionType) {
+            ConnectionType.USB -> toggleUsbAudio()
+            ConnectionType.SERVER -> {
+                val player = controller ?: return
+                if (player.isPlaying) {
+                    player.pause()
+                } else {
+                    refreshAudioStream(forcePlay = true)
+                }
+            }
         }
+    }
+
+    /** Start audio automatically on connect when the user enabled "play audio by default". */
+    private fun maybeStartDefaultAudio(connectionType: ConnectionType) {
+        if (!_localState.value.playAudioByDefault) return
+        if (uiState.value.audioPlaying) return
+        when (connectionType) {
+            ConnectionType.SERVER -> refreshAudioStream(forcePlay = true)
+            ConnectionType.USB -> {
+                if (usbAudioEngine.hasRecordPermission() && usbAudioEngine.findUsbAudioInput() != null) {
+                    UsbAudioService.start(getApplication())
+                    _localState.update { it.copy(audioPlaying = true) }
+                }
+            }
+        }
+    }
+
+    private fun toggleUsbAudio() {
+        if (uiState.value.audioPlaying) {
+            UsbAudioService.stop(getApplication())
+            _localState.update { it.copy(audioPlaying = false) }
+            return
+        }
+        if (!usbAudioEngine.hasRecordPermission()) {
+            _localState.update {
+                it.copy(errorMessage = "Microphone permission is required to play USB tuner audio")
+            }
+            return
+        }
+        if (usbAudioEngine.findUsbAudioInput() == null) {
+            _localState.update {
+                it.copy(errorMessage = "No USB audio device detected for this tuner")
+            }
+            return
+        }
+        // Runs in a microphone foreground service so playback survives the screen turning off.
+        UsbAudioService.start(getApplication())
+        _localState.update { it.copy(audioPlaying = true) }
     }
 
     fun tuneToFrequency(valueMHz: Double) {
@@ -286,8 +385,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         sessionController.sendCommand("T$kHz")
         sessionController.resetRds()
+        if (uiState.value.connectionType == ConnectionType.USB) {
+            sessionController.cacheUsbFrequency(kHz)
+        }
 
-        if (uiState.value.restartAudioOnTune) {
+        if (uiState.value.restartAudioOnTune && uiState.value.connectionType == ConnectionType.SERVER) {
             refreshAudioStream()
         }
     }
@@ -330,8 +432,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleStereoMode() {
         val tunerState = uiState.value.tunerState ?: return
-        val command = if (tunerState.stereoForced) "B0" else "B1"
-        sessionController.sendCommand(command)
+        val newForcedMono = !tunerState.stereoForced
+        // B = output mode (native firmware + webserver): 0 = stereo, 1 = forced mono.
+        sessionController.sendCommand(if (newForcedMono) "B1" else "B0")
+        // The tuner doesn't echo this back, so reflect it optimistically for the button state.
+        sessionController.mutateTunerState { it.copy(stereoForced = newForcedMono) }
     }
 
     fun cycleAntenna() {
@@ -433,6 +538,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        runCatching { app.unregisterReceiver(usbReceiver) }
+        UsbAudioService.stop(getApplication())
         pluginConnection?.close()
         pluginConnection = null
         spectrumScanFallbackJob?.cancel()
@@ -490,7 +597,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         networkBuffer: Int,
         playerBuffer: Int,
         restartAudioOnTune: Boolean,
-        passThroughEnabled: Boolean
+        passThroughEnabled: Boolean,
+        playAudioByDefault: Boolean
     ) {
         preferences.edit {
             putString(KEY_SIGNAL_UNIT, signalUnit.name)
@@ -498,6 +606,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             putInt(KEY_PLAYER_BUFFER, playerBuffer)
             putBoolean(KEY_RESTART_AUDIO_ON_TUNE, restartAudioOnTune)
             putBoolean(KEY_PASS_THROUGH_ENABLED, passThroughEnabled)
+            putBoolean(KEY_PLAY_AUDIO_BY_DEFAULT, playAudioByDefault)
         }
     }
 
@@ -516,15 +625,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val playerBuffer = persistedPlayerBuffer.coerceAtLeast(DEFAULT_PLAYER_BUFFER_MS)
         val restartAudioOnTune = preferences.getBoolean(KEY_RESTART_AUDIO_ON_TUNE, false)
         val passThroughEnabled = preferences.getBoolean(KEY_PASS_THROUGH_ENABLED, false)
+        val preferDirectMode = preferences.getBoolean(KEY_PREFER_DIRECT_MODE, false)
+        val playAudioByDefault = preferences.getBoolean(KEY_PLAY_AUDIO_BY_DEFAULT, false)
         _localState.update {
             it.copy(
                 signalUnit = signalUnit,
                 networkBuffer = networkBuffer,
                 playerBuffer = playerBuffer,
                 restartAudioOnTune = restartAudioOnTune,
-                passThroughEnabled = passThroughEnabled
+                passThroughEnabled = passThroughEnabled,
+                preferDirectMode = preferDirectMode,
+                playAudioByDefault = playAudioByDefault
             )
         }
+    }
+
+    /** Remember whether the user prefers the Remote (server) or Direct (USB) connection screen. */
+    fun setPreferredConnectionMode(direct: Boolean) {
+        if (_localState.value.preferDirectMode == direct) return
+        preferences.edit { putBoolean(KEY_PREFER_DIRECT_MODE, direct) }
+        _localState.update { it.copy(preferDirectMode = direct) }
     }
 
     private fun refreshBufferSettings() {
@@ -594,10 +714,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val PREFS_NAME = "fm_dx_prefs"
         private const val KEY_SIGNAL_UNIT = "signal_unit"
+        private const val KEY_PREFER_DIRECT_MODE = "prefer_direct_mode"
         private const val KEY_NETWORK_BUFFER = "network_buffer"
         private const val KEY_PLAYER_BUFFER = "player_buffer"
         private const val KEY_RESTART_AUDIO_ON_TUNE = "restart_audio_on_tune"
         private const val KEY_PASS_THROUGH_ENABLED = "pass_through_enabled"
+        private const val KEY_PLAY_AUDIO_BY_DEFAULT = "play_audio_by_default"
         private const val TAG = "MainViewModel"
         private const val SPECTRUM_SCAN_FALLBACK_MS = 8000L
         private const val SPECTRUM_PLUGIN_UNAVAILABLE_MESSAGE =
@@ -631,11 +753,16 @@ private data class LocalUiState(
     val passThroughEnabled: Boolean = false,
     val statusMessage: String? = null,
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
-    val isSpectrumAvailable: Boolean = false
+    val isSpectrumAvailable: Boolean = false,
+    val preferDirectMode: Boolean = false,
+    val usbTunerName: String? = null,
+    val playAudioByDefault: Boolean = false
 )
 
 data class UiState(
     val serverUrl: String = "",
+    val connectionType: ConnectionType = ConnectionType.SERVER,
+    val preferDirectMode: Boolean = false,
     val recentServerUrls: List<String> = emptyList(),
     val tunerInfo: TunerInfo? = null,
     val tunerState: TunerState? = null,
@@ -656,7 +783,9 @@ data class UiState(
     val stationLogoUrl: String? = MainViewModel.DEFAULT_LOGO_URL,
     val serverLatencyMs: Double? = null,
     val publicServerPickerState: PublicServerPickerState = PublicServerPickerState(),
-    val isSpectrumAvailable: Boolean = false
+    val isSpectrumAvailable: Boolean = false,
+    val usbTunerName: String? = null,
+    val playAudioByDefault: Boolean = false
 )
 
 data class PublicServerPickerState(

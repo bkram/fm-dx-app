@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'io.gitlab.arturbosch.detekt'
 }
 
 // Git-derived version. versionCode = total commit count (monotonic across the branch),
@@ -18,8 +19,8 @@ def runGit = { String... args ->
     def text = result.standardOutput.asText.get().trim()
     text.isEmpty() ? null : text
 }
-def FALLBACK_VERSION_CODE = 19900
-def FALLBACK_VERSION_NAME = "1.99"
+def FALLBACK_VERSION_CODE = 20000
+def FALLBACK_VERSION_NAME = "2.0.0"
 def resolvedVersionCode = runGit('rev-list', '--count', 'HEAD')?.toInteger() ?: FALLBACK_VERSION_CODE
 def resolvedVersionName = runGit('describe', '--tags', '--always', '--dirty')
     ?.replaceFirst(/^v/, '') ?: FALLBACK_VERSION_NAME
@@ -67,6 +68,19 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
     }
+
+    lint {
+        // Fail the build on lint errors; keep warnings visible but non-fatal.
+        abortOnError = true
+        warningsAsErrors = false
+        checkDependencies = true
+        // These connect to the network / are advisory only — too flaky for CI.
+        disable += ['NewerVersionAvailable', 'GradleDependency']
+        // Stable, reviewable report locations.
+        textReport = true
+        htmlReport = true
+        baseline = file('lint-baseline.xml')
+    }
 }
 
 dependencies {
@@ -100,8 +114,31 @@ dependencies {
     implementation 'androidx.media3:media3-extractor:1.10.0'
     implementation 'androidx.media3:media3-session:1.10.0'
 
+    // CDC-ACM serial driver for a directly attached USB FM-DX Tuner.
+    implementation 'com.github.mik3y:usb-serial-for-android:3.9.0'
+
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20251224'
+
+    // detekt static analysis: ktlint formatting rules + Jetpack Compose rules.
+    detektPlugins 'io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8'
+    detektPlugins 'io.nlopez.compose.rules:detekt:0.6.2'
+}
+
+detekt {
+    parallel = true
+    buildUponDefaultConfig = true
+    config.setFrom("$rootDir/config/detekt/detekt.yml")
+    baseline = file('detekt-baseline.xml')
+}
+
+tasks.withType(io.gitlab.arturbosch.detekt.Detekt).configureEach {
+    jvmTarget = '21'
+    reports {
+        html.required = true
+        sarif.required = false
+        md.required = false
+    }
 }
 
 tasks.register("printVersion") {

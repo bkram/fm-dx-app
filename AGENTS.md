@@ -8,8 +8,8 @@ plugins the app expects.
 ## Common Commands
 
 All commands assume you're at the repository root with `ANDROID_HOME` / `ANDROID_SDK_ROOT`
-pointing at an SDK that has `platforms;android-36.1`, `build-tools;36.1.0`, and `platform-tools`
-installed.
+pointing at an SDK that has `platforms;android-37`, `build-tools;36.1.0`, and `platform-tools`
+installed. (compile/target SDK is API 37; minSdk is API 29.)
 
 - `./gradlew :fm-dx-app:assembleDebug` — debug APK at
   `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`.
@@ -20,22 +20,46 @@ installed.
   `android/fm-dx-app/build/reports/tests/testDebugUnitTest/index.html`.
 - `./gradlew :fm-dx-app:test --tests "org.fmdx.app.audio.MediaItemBuilderTest.nowPlayingFields_prefersPsForTitleAndStation"` —
   run one test by FQN (use `*` wildcards as needed).
-- `./gradlew :fm-dx-app:lintDebug` — Android Lint. Plain-text report at
-  `android/fm-dx-app/build/reports/lint-results-debug.txt`.
+- `./gradlew :fm-dx-app:lintDebug` — Android Lint (config in the module `lint {}` block; errors
+  fail the build, warnings are baselined in `android/fm-dx-app/lint-baseline.xml`). Plain-text
+  report at `android/fm-dx-app/build/reports/lint-results-debug.txt`. Regenerate the baseline by
+  deleting it and re-running.
+- `./gradlew :fm-dx-app:detekt` — Kotlin static analysis (detekt + ktlint formatting rules +
+  Jetpack Compose rules). Config `config/detekt/detekt.yml`; existing findings are frozen in
+  `android/fm-dx-app/detekt-baseline.xml` (regenerate: delete it and run `detektBaseline`).
+- `npx markdownlint-cli2` — lint Markdown docs (config `.markdownlint-cli2.jsonc`; add `--fix` to
+  auto-fix). Requires Node.
 - `./gradlew --stop` — kill Gradle / Kotlin daemons if the compile cache misbehaves.
+
+CI (`.github/workflows/android-ci.yml`) runs a **validate** job on every push — JVM unit tests,
+`lintDebug`, `detekt`, and markdownlint — before the build/release jobs. Keep them all green.
 
 ## Architecture Overview
 
-The app is a single-activity Compose Material 3 client for `fm-dx-webserver` remote tuners.
+The app is a single-activity Compose Material 3 client that connects either to a remote
+`fm-dx-webserver` (network) or directly to a **TEF668X Headless USB Tuner** over USB-OTG. The
+connection kind is tracked by `ConnectionType` (`SERVER` / `USB`) in `data/`.
 
 - **`FmDxApp` (`org.fmdx.app.FmDxApp`)** is the `Application` subclass. It owns one process-wide
   `FmDxSessionController` accessed via `(application as FmDxApp).sessionController`.
 - **`FmDxSessionController` (`data/FmDxSessionController.kt`)** is the single source of truth for
-  connection / RDS / freq state. It owns the control WebSocket (via
-  `FmDxRepository.connectControl`), the live `TunerState`, station-logo lookup
-  (`findStationLogo` in `FmDxRepository.kt` — local `/logos/{ITU}/{PI}.{ext}` first, then the
-  central `tef.noobish.eu` directory listing), latency monitor, and `KEY_LAST_SERVER_URL`
-  persistence in the `fm_dx_prefs` SharedPreferences. Exposes `state: StateFlow<FmDxSessionState>`.
+  connection / RDS / freq state, for BOTH connection kinds. For a server it owns the control
+  WebSocket (via `FmDxRepository.connectControl`); for a USB tuner `connectUsb()` opens a
+  `TunerControlTransport` (see below). It holds the live `TunerState`, station-logo lookup
+  (`findStationLogo` in `FmDxRepository.kt`, server only), latency monitor, `KEY_LAST_SERVER_URL`
+  and the last USB frequency (`KEY_LAST_USB_FREQ_KHZ`) in `fm_dx_prefs`. Exposes
+  `state: StateFlow<FmDxSessionState>` (which carries `connectionType`). Its transport `onState`
+  merges incoming parser snapshots but PRESERVES user-controlled `eq`/`ims`/`stereoForced`/
+  `antennaIndex`, which the raw line protocol never echoes back.
+- **Direct USB tuner stack** speaks the XDR/xdrd line protocol straight to the tuner — no
+  `fm-dx-webserver` and no `xdrd` daemon. `data/tuner/` holds the transport-agnostic codec:
+  `TunerControlTransport` (interface), `XdrLineParser` (accumulates `T`/`S`/`P`/`R`/`o` lines into a
+  `TunerState`), and `RdsDecoder` (decodes raw RDS groups → PS/RadioText/PTY/TP/TA/MS + DI). These
+  are pure Kotlin with JVM tests under `data/tuner/`. `data/usb/` holds `UsbTunerTransport`
+  (CDC-ACM via usb-serial-for-android) and `UsbTunerDiscovery` (restricted to VID `0x1209` /
+  PID `0x6687`). USB audio (`RECORD_AUDIO`) is captured by `audio/UsbAudioEngine` and kept alive by
+  `audio/UsbAudioService`, a `microphone` foreground service — stop it with `stopService` (never
+  `startService` with a STOP action: that throws on background). See `docs/architecture.md`.
 - **`MainViewModel`** keeps only UI-only state (settings, public-server picker, spectrum + plugin
   socket, audio-playing) and `combine(...)`s it with `sessionController.state` into the public
   `uiState`. Tuning commands forward through `sessionController.sendCommand` /
@@ -58,10 +82,11 @@ The app is a single-activity Compose Material 3 client for `fm-dx-webserver` rem
   default placeholder).
 
 ## Development Practices
+
 - Prefer stable, non-deprecated Android and Kotlin APIs. When you must touch deprecated code, leave
   a short comment describing why it is required and reference the tracking task if one exists.
 - Keep Gradle and manifest settings aligned with the module’s current compile/target SDK
-  (API 36.1). Only bump versions when explicitly asked and update all related config together.
+  (API 37). Only bump versions when explicitly asked and update all related config together.
 - Lean on Kotlin idioms: scope functions, sealed hierarchies, and structured concurrency with
   `CoroutineScope`s that respect lifecycle boundaries.
 - Any new functionality should ship with relevant automated verification (unit tests, instrumentation
@@ -104,32 +129,39 @@ The app is a single-activity Compose Material 3 client for `fm-dx-webserver` rem
   tuning controls belong in `FrequencyControlsCard` inside `MainUi.kt`.
 
 ## Build & Install Checklist
+
 These steps assume you are in the repository root.
 
-1. **Install Android SDK preview packages (API 36.1)**  
+1. **Install Android SDK packages (API 37)**  
    Ensure `ANDROID_HOME` or `ANDROID_SDK_ROOT` points at an SDK containing:
-   - `platforms;android-36.1`
+   - `platforms;android-37`
    - `build-tools;36.1.0`
    - `platform-tools`  
    Use `sdkmanager --sdk_root="$ANDROID_SDK_ROOT" <package>` if anything is missing.
 
 2. **Prime the Gradle wrapper**  
+
    ```bash
    ./gradlew --version
    ```
+
    This downloads the wrapper JAR/distribution if necessary.
 
 3. **Assemble the debug APK**  
+
    ```bash
    ./gradlew :fm-dx-app:assembleDebug
    ```
+
    The APK is written to `android/fm-dx-app/build/outputs/apk/debug/fm-dx-app-debug.apk`.  
    Note: warnings like `Unable to strip … libandroidx.graphics.path.so` are expected.
 
 4. **(Optional) Install on a connected device or emulator**  
+
    ```bash
    ./gradlew :fm-dx-app:installDebug
    ```
+
    Follow with `adb shell am start -n org.fmdx.app/.MainActivity` if you want to launch it from the CLI.
    When more than one device is attached (e.g. emulator + a wireless-debugged phone), pass `-s
    <serial>` to `adb` and use the APK at
@@ -140,6 +172,7 @@ These steps assume you are in the repository root.
 
 5. **Troubleshooting compiler cache errors**  
    If the Kotlin compiler aborts with cache/daemon issues, stop any running daemons and retry:
+
    ```bash
    ./gradlew --stop
    ```
@@ -149,6 +182,7 @@ These steps assume you are in the repository root.
 If you need to build inside a Debian-based container, mirror `docker-build.sh`:
 
 1. **Install prerequisites**
+
    ```bash
    apt-get update && apt-get install -y wget unzip curl openjdk-21-jdk
    export ANDROID_SDK_ROOT=/usr/lib/android-sdk
@@ -156,6 +190,7 @@ If you need to build inside a Debian-based container, mirror `docker-build.sh`:
    ```
 
 2. **Download Android command-line tools**
+
    ```bash
    wget -O /tmp/android-commandlinetools.zip \
      https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
@@ -163,18 +198,21 @@ If you need to build inside a Debian-based container, mirror `docker-build.sh`:
    ```
 
 3. **Update and install required SDK components**
+
    ```bash
    "$ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --update
    yes | "$ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" \
-     "platforms;android-36.1"
+     "platforms;android-37"
    ```
 
 4. **Create `local.properties` with the SDK path**
+
    ```bash
    echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
    ```
 
 5. **Build**
+
    ```bash
    ./gradlew --version
    ./gradlew :fm-dx-app:assembleDebug

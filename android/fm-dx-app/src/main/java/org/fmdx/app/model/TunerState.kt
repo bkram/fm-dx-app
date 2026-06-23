@@ -57,6 +57,41 @@ data class TunerState(
     }
 
     companion object {
+        /** A blank state used as the accumulation base for the raw line protocol (USB / xdrd). */
+        fun empty(): TunerState = TunerState(
+            freqMHz = null,
+            minFreqMHz = null,
+            maxFreqMHz = null,
+            stepKHz = null,
+            signalDbf = null,
+            stereo = false,
+            stereoForced = false,
+            ims = false,
+            eq = false,
+            antennaIndex = null,
+            users = null,
+            ps = null,
+            psErrors = emptyList(),
+            pi = null,
+            ecc = null,
+            countryName = null,
+            countryIso = null,
+            tp = false,
+            ta = false,
+            ms = false,
+            pty = null,
+            ptyText = null,
+            dynamicPty = null,
+            artificialHead = null,
+            compressed = null,
+            rt0 = null,
+            rt0Errors = emptyList(),
+            rt1 = null,
+            rt1Errors = emptyList(),
+            afList = emptyList(),
+            txInfo = null
+        )
+
         fun fromJson(json: String): TunerState {
             val obj = JSONObject(json)
             val freq = obj.optDoubleOrNull("freq")

@@ -2,6 +2,7 @@ package org.fmdx.app.data
 
 import android.app.Application
 import android.content.Context
+import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
@@ -20,9 +21,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.fmdx.app.BuildConfig
+import org.fmdx.app.data.tuner.TunerControlTransport
+import org.fmdx.app.data.tuner.XdrCommands
+import org.fmdx.app.data.usb.UsbTunerDiscovery
+import org.fmdx.app.data.usb.UsbTunerTransport
 import org.fmdx.app.model.TunerInfo
 import org.fmdx.app.model.TunerState
 import org.fmdx.app.network.createFmDxOkHttpClient
+import java.io.IOException
 import java.util.Locale
 
 /**
@@ -37,6 +43,7 @@ class FmDxSessionController(application: Application) {
     val okHttpClient = createFmDxOkHttpClient()
     val repository = FmDxRepository(okHttpClient)
 
+    private val appContext = application.applicationContext
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -46,6 +53,7 @@ class FmDxSessionController(application: Application) {
     )
 
     private var controlConnection: ControlConnection? = null
+    private var transport: TunerControlTransport? = null
     private var commandJob: Job? = null
     private var stationLogoJob: Job? = null
     private var latencyJob: Job? = null
@@ -122,6 +130,151 @@ class FmDxSessionController(application: Application) {
         }
     }
 
+    /**
+     * Connect to a directly attached USB FM-DX Tuner. Picks the first recognised USB-serial device,
+     * requests permission if needed, and speaks the XDR line protocol over CDC-ACM.
+     */
+    fun connectUsb() {
+        if (_state.value.isConnecting) return
+        val usbManager = appContext.getSystemService(Context.USB_SERVICE) as? UsbManager
+        val device = usbManager?.let { UsbTunerDiscovery.firstTuner(it) }
+        if (usbManager == null || device == null) {
+            _state.update {
+                it.copy(
+                    errorMessage = "No USB tuner detected",
+                    statusMessage = "No USB tuner detected"
+                )
+            }
+            return
+        }
+        if (_state.value.isConnected) teardownConnections()
+        val label = "usb://${device.productName ?: device.deviceName}"
+        beginConnecting(label, ConnectionType.USB, "Connecting to USB tuner…")
+        connectJob?.cancel()
+        connectJob = scope.launch {
+            try {
+                val granted = UsbTunerDiscovery.ensurePermission(appContext, usbManager, device)
+                if (!granted) throw IOException("USB permission denied")
+                val info = TunerInfo(
+                    tunerName = device.productName ?: "USB Tuner",
+                    tunerDescription = "Directly attached FM-DX Tuner",
+                    antennaNames = emptyList(),
+                    activeAntenna = 0
+                )
+                openTransport(UsbTunerTransport(usbManager, device, scope), info, label, ConnectionType.USB)
+            } catch (ex: Exception) {
+                if (ex is CancellationException) throw ex
+                logDebug("connectUsb(): failed", ex)
+                failConnection(ex)
+            }
+        }
+    }
+
+    private fun beginConnecting(label: String, type: ConnectionType, status: String) {
+        lastLogoKey = null
+        _state.update {
+            it.copy(
+                serverUrl = label,
+                connectionType = type,
+                isConnecting = true,
+                errorMessage = null,
+                statusMessage = status
+            )
+        }
+    }
+
+    private suspend fun openTransport(
+        newTransport: TunerControlTransport,
+        info: TunerInfo,
+        label: String,
+        type: ConnectionType
+    ) {
+        newTransport.open(object : TunerControlTransport.Callbacks {
+            override fun onState(state: TunerState) {
+                _state.update { current ->
+                    // EQ / IMS / forced-mono / antenna are set by the user but never reported back
+                    // by the raw line protocol, so the parser leaves them at defaults on every
+                    // status line. Preserve the user's last choice instead of letting each ~66 ms
+                    // status update clobber it.
+                    val prev = current.tunerState
+                    val merged = if (prev != null) {
+                        state.copy(
+                            eq = prev.eq,
+                            ims = prev.ims,
+                            stereoForced = prev.stereoForced,
+                            antennaIndex = prev.antennaIndex ?: state.antennaIndex
+                        )
+                    } else {
+                        state
+                    }
+                    current.copy(tunerState = merged, pendingFrequencyMHz = null)
+                }
+            }
+
+            override fun onClosed() {
+                logDebug("transport: closed")
+                scope.launch { disconnect() }
+            }
+
+            override fun onError(error: Throwable) {
+                logDebug("transport: error", error)
+                _state.update { it.copy(errorMessage = error.message, statusMessage = error.message) }
+            }
+        })
+        transport = newTransport
+        _state.update {
+            it.copy(
+                serverUrl = label,
+                connectionType = type,
+                tunerInfo = info,
+                antennas = info.antennaNames,
+                isConnected = true,
+                isConnecting = false,
+                statusMessage = null,
+                errorMessage = null
+            )
+        }
+        commandJob?.cancel()
+        commandJob = scope.launch {
+            commandFlow.collect { cmd ->
+                logDebug("transport: sending $cmd")
+                newTransport.send(cmd)
+                delay(COMMAND_THROTTLE_MS)
+            }
+        }
+
+        // Tune the USB tuner on connect: the last frequency we used, or 87.5 MHz (the FM-DX
+        // Tuner's own default) when there is no cached value yet.
+        if (type == ConnectionType.USB) {
+            val kHz = lastUsbFrequencyKHz() ?: DEFAULT_TUNE_KHZ
+            scope.launch {
+                delay(USB_RESTORE_TUNE_DELAY_MS)
+                _state.update { it.copy(pendingFrequencyMHz = kHz / 1000.0) }
+                sendCommand(XdrCommands.tune(kHz))
+            }
+        }
+    }
+
+    /** Persist the last frequency tuned on a USB tuner so it can be restored on reconnect. */
+    fun cacheUsbFrequency(kHz: Int) {
+        if (kHz <= 0) return
+        preferences.edit { putInt(KEY_LAST_USB_FREQ_KHZ, kHz) }
+    }
+
+    private fun lastUsbFrequencyKHz(): Int? =
+        preferences.getInt(KEY_LAST_USB_FREQ_KHZ, -1).takeIf { it > 0 }
+
+    private fun failConnection(ex: Exception) {
+        _state.update {
+            it.copy(
+                errorMessage = ex.message,
+                isConnected = false,
+                isConnecting = false,
+                statusMessage = ex.message ?: "Connection failed"
+            )
+        }
+    }
+
     fun disconnect() {
         connectJob?.cancel()
         connectJob = null
@@ -137,7 +290,8 @@ class FmDxSessionController(application: Application) {
                 antennas = emptyList(),
                 stationLogoUrl = FmDxRepository.DEFAULT_LOGO_URL,
                 serverLatencyMs = null,
-                pendingFrequencyMHz = null
+                pendingFrequencyMHz = null,
+                connectionType = ConnectionType.SERVER
             )
         }
     }
@@ -171,6 +325,8 @@ class FmDxSessionController(application: Application) {
     private fun teardownConnections() {
         controlConnection?.close()
         controlConnection = null
+        transport?.close()
+        transport = null
         commandJob?.cancel()
         commandJob = null
         latencyJob?.cancel()
@@ -311,8 +467,13 @@ class FmDxSessionController(application: Application) {
         private const val PREFS_NAME = "fm_dx_prefs"
         const val KEY_LAST_SERVER_URL = "last_server_url"
         private const val KEY_RECENT_SERVER_URLS = "recent_server_urls"
+        // v2: the v1 key could be polluted by spurious picker tunes before that bug was fixed.
+        private const val KEY_LAST_USB_FREQ_KHZ = "last_usb_freq_khz_v2"
+        private const val USB_RESTORE_TUNE_DELAY_MS = 1200L
+        private const val DEFAULT_TUNE_KHZ = 87500 // FM-DX Tuner firmware default (87.5 MHz)
         private const val LATENCY_POLL_INTERVAL_MS = 15_000L
         private const val LATENCY_EMA_ALPHA = 0.3
+        private const val COMMAND_THROTTLE_MS = 125L
 
         fun sanitizeUrl(input: String): String {
             val trimmed = input.trim()
@@ -335,8 +496,12 @@ class FmDxSessionController(application: Application) {
     }
 }
 
+/** How the live session is connected to its tuner. */
+enum class ConnectionType { SERVER, USB }
+
 data class FmDxSessionState(
     val serverUrl: String = "",
+    val connectionType: ConnectionType = ConnectionType.SERVER,
     val tunerInfo: TunerInfo? = null,
     val tunerState: TunerState? = null,
     val isConnected: Boolean = false,

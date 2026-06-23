@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,13 +45,18 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.UsbOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,6 +65,7 @@ import androidx.compose.material3.FilterChip
 import com.mikepenz.markdown.m3.Markdown
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -70,9 +75,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -88,8 +95,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -125,6 +130,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -143,15 +149,14 @@ import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.fmdx.app.data.ConnectionType
 import org.fmdx.app.model.PublicServer
 import org.fmdx.app.model.SignalUnit
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.drawText
@@ -174,6 +179,8 @@ internal fun FmDxApp(
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onConnectUsb: () -> Unit,
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onToggleAudio: () -> Unit,
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
@@ -184,7 +191,7 @@ internal fun FmDxApp(
     formatSignal: (TunerState?, SignalUnit) -> String,
     currentPty: (TunerState?) -> String,
     antennaLabel: () -> String,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit,
     onShowPublicServerPicker: () -> Unit,
     onHidePublicServerPicker: () -> Unit,
     onRefreshPublicServers: () -> Unit,
@@ -202,6 +209,7 @@ internal fun FmDxApp(
         { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
     }
     val hConnect = { hapticTap(); onConnect() }
+    val hConnectUsb = { hapticTap(); onConnectUsb() }
     val hDisconnect = { hapticTap(); onDisconnect() }
     val hToggleAudio = { hapticTap(); onToggleAudio() }
     val hToggleEq = { hapticTap(); onToggleEq() }
@@ -235,6 +243,8 @@ internal fun FmDxApp(
                 onUpdateUrl = onUpdateUrl,
                 onConnect = hConnect,
                 onDisconnect = hDisconnect,
+                onConnectUsb = hConnectUsb,
+                onSetConnectionMode = onSetConnectionMode,
                 onToggleAudio = hToggleAudio,
                 onTuneDirect = hTuneDirect,
                 onToggleEq = hToggleEq,
@@ -266,6 +276,8 @@ private fun MainScreen(
     onUpdateUrl: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onConnectUsb: () -> Unit = {},
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onToggleAudio: () -> Unit,
     onTuneDirect: (Double) -> Unit,
     onToggleEq: () -> Unit,
@@ -300,11 +312,13 @@ private fun MainScreen(
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                     onShowPublicServerPicker = onShowPublicServerPicker,
+                    onConnectUsb = onConnectUsb,
+                    onSetConnectionMode = onSetConnectionMode,
                     onRemoveRecentServer = onRemoveRecentServer
                 )
             }
         )
-        if (state.isConnected) {
+        if (state.isConnected && state.connectionType == ConnectionType.SERVER) {
             add(
                 SectionTab(
                     titleRes = R.string.server_info_tab_title,
@@ -356,20 +370,22 @@ private fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
-    LaunchedEffect(state.isConnected, tabs.size) {
+    LaunchedEffect(state.isConnected) {
         if (!state.isConnected) {
             pagerState.scrollToPage(0)
-        } else {
-            if (pagerState.currentPage >= tabs.size) {
-                pagerState.scrollToPage(tabs.lastIndex)
-                return@LaunchedEffect
-            }
-            if (pagerState.currentPage == 0) {
-                val tunerPageIndex = tabs.indexOfFirst { it.titleRes == R.string.tuner }
-                if (tunerPageIndex != -1) {
-                    pagerState.animateScrollToPage(tunerPageIndex)
-                }
-            }
+            return@LaunchedEffect
+        }
+        // On a fresh connection, surface the Tuner tab. The tab list grows the
+        // moment isConnected flips, but PagerState.pageCount only refreshes on the
+        // next measure pass — so wait for the new pages to register before
+        // scrolling, otherwise animateScrollToPage clamps to the stale page count
+        // and we never reach the Tuner. Keying this effect on isConnected only
+        // (not tabs.size) also stops a later spectrum-availability change from
+        // cancelling the in-flight scroll animation.
+        val tunerPageIndex = tabs.indexOfFirst { it.titleRes == R.string.tuner }
+        if (tunerPageIndex > 0) {
+            snapshotFlow { pagerState.pageCount }.first { it > tunerPageIndex }
+            pagerState.animateScrollToPage(tunerPageIndex)
         }
     }
 
@@ -380,10 +396,18 @@ private fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = stringResource(id = R.string.main_title),
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(id = R.string.main_title),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 },
                 actions = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -392,7 +416,10 @@ private fun MainScreen(
                             isConnecting = state.isConnecting
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = onToggleAudio, enabled = state.isConnected) {
+                        IconButton(
+                            onClick = onToggleAudio,
+                            enabled = state.isConnected
+                        ) {
                             val playing = state.audioPlaying
                             val icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow
                             Icon(
@@ -469,6 +496,7 @@ private fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .imePadding()
                             .padding(16.dp)
                     ) {
                         val scrollState = rememberScrollState()
@@ -509,7 +537,7 @@ private fun MainScreen(
 @Composable
 private fun SettingsScreen(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit,
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -534,6 +562,7 @@ private fun SettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .imePadding()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -589,10 +618,10 @@ private fun AboutScreen(onBack: () -> Unit) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(24.dp)
                         .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.mipmap.ic_launcher_foreground),
@@ -600,92 +629,78 @@ private fun AboutScreen(onBack: () -> Unit) {
                         modifier = Modifier.size(96.dp)
                     )
                     Text(
+                        text = stringResource(id = R.string.app_name),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
                         text = stringResource(id = R.string.about_message),
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                     Text(
                         text = versionLabel,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
             }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(
-                    modifier = Modifier.padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
                     Text(
                         text = stringResource(id = R.string.about_links_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
-                    ListItem(
-                        headlineContent = { Text(text = githubLabel) },
-                        supportingContent = { Text(text = githubUrl) },
-                        trailingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { uriHandler.openUri(githubUrl) }
-                    )
-                    ListItem(
-                        headlineContent = { Text(text = fmdxWebServerLabel) },
-                        supportingContent = { Text(text = fmdxWebServerUrl) },
-                        trailingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { uriHandler.openUri(fmdxWebServerUrl) }
-                    )
-                    ListItem(
-                        headlineContent = { Text(text = tefLoggerLabel) },
-                        supportingContent = { Text(text = tefLoggerUrl) },
-                        trailingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { uriHandler.openUri(tefLoggerUrl) }
-                    )
-                    HorizontalDivider()
-                    ListItem(
-                        headlineContent = { Text(text = fmdxOrgSiteLabel) },
-                        supportingContent = { Text(text = fmdxOrgSiteUrl) },
-                        trailingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { uriHandler.openUri(fmdxOrgSiteUrl) }
-                    )
+                    AboutLinkItem(icon = Icons.Filled.Code, label = githubLabel) {
+                        uriHandler.openUri(githubUrl)
+                    }
+                    AboutLinkItem(icon = Icons.Filled.Dns, label = fmdxWebServerLabel) {
+                        uriHandler.openUri(fmdxWebServerUrl)
+                    }
+                    AboutLinkItem(icon = Icons.Filled.TravelExplore, label = tefLoggerLabel) {
+                        uriHandler.openUri(tefLoggerUrl)
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    AboutLinkItem(icon = Icons.Filled.Public, label = fmdxOrgSiteLabel) {
+                        uriHandler.openUri(fmdxOrgSiteUrl)
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AboutLinkItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(text = label) },
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    )
 }
 
 internal fun clampTabIndex(currentPage: Int, tabCount: Int): Int {
@@ -835,6 +850,8 @@ private fun ConnectionSection(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onShowPublicServerPicker: () -> Unit,
+    onConnectUsb: () -> Unit = {},
+    onSetConnectionMode: (direct: Boolean) -> Unit = {},
     onRemoveRecentServer: (String) -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
@@ -843,7 +860,24 @@ private fun ConnectionSection(
         onConnect()
     }
 
+    // Selected segment is the user's remembered preference (persisted across restarts).
+    val mode = if (state.preferDirectMode) ConnectionMode.DIRECT else ConnectionMode.REMOTE
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = mode == ConnectionMode.REMOTE,
+                onClick = { onSetConnectionMode(false) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            ) { Text(stringResource(id = R.string.connection_mode_remote)) }
+            SegmentedButton(
+                selected = mode == ConnectionMode.DIRECT,
+                onClick = { onSetConnectionMode(true) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+            ) { Text(stringResource(id = R.string.connection_mode_direct)) }
+        }
+
+        if (mode == ConnectionMode.REMOTE) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -952,6 +986,85 @@ private fun ConnectionSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+        } else {
+            DirectTunerCard(
+                state = state,
+                onConnectUsb = {
+                    focusManager.clearFocus(force = true)
+                    onConnectUsb()
+                }
+            )
+            // Disconnect control for an active direct (USB) connection.
+            if (state.isConnected && state.connectionType != ConnectionType.SERVER) {
+                Button(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.disconnect))
+                }
+            }
+        }
+    }
+}
+
+private enum class ConnectionMode { REMOTE, DIRECT }
+
+@Composable
+private fun DirectTunerCard(
+    state: UiState,
+    onConnectUsb: () -> Unit
+) {
+    val tunerAttached = state.usbTunerName != null
+    val canConnect = tunerAttached && !state.isConnected && !state.isConnecting
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.direct_tuner_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(id = R.string.direct_tuner_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            // Live USB attach state so the user knows whether a tuner is plugged in.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (tunerAttached) Icons.Filled.Usb else Icons.Filled.UsbOff,
+                    contentDescription = null,
+                    tint = if (tunerAttached) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Text(
+                    text = state.usbTunerName
+                        ?: stringResource(id = R.string.usb_tuner_not_detected),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (tunerAttached) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Button(
+                onClick = onConnectUsb,
+                enabled = canConnect,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(id = R.string.connect_usb_tuner))
             }
         }
     }
@@ -1428,12 +1541,15 @@ private fun FrequencyControlsCard(
     }
 
     LaunchedEffect(minKHz, maxKHz, stepKHz) {
-        snapshotFlow { selectedMHz to selectedDecimalIndex }
+        snapshotFlow { Triple(selectedMHz, selectedDecimalIndex, isUserInteracting) }
+            // Only tune in response to the user spinning the picker. Without this gate the
+            // programmatic sync (above) emits a spurious tune to the band minimum on connect —
+            // which fought the USB restore frequency and polluted the cached frequency.
+            .filter { it.third }
             .debounce(400)
-            .collectLatest { (mhz, decimalIndex) ->
-                val requestedKHz = mhz * 1000 + decimalIndex * stepKHz
-                val clampedKHz = requestedKHz.coerceIn(minKHz, maxKHz)
-                onTuneDirect(clampedKHz / 1000.0)
+            .collectLatest { (mhz, decimalIndex, _) ->
+                val requestedKHz = (mhz * 1000 + decimalIndex * stepKHz).coerceIn(minKHz, maxKHz)
+                onTuneDirect(requestedKHz / 1000.0)
             }
     }
 
@@ -1641,12 +1757,12 @@ private fun TunerSection(
     onCycleAntenna: () -> Unit,
     antennaLabel: () -> String
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val tunerState = state.tunerState
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 RdsPsPiContent(tunerState)
                 RdsPtyEccContent(tunerState, currentPty)
@@ -1657,7 +1773,7 @@ private fun TunerSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -1688,8 +1804,8 @@ private fun TunerSection(
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FrequencyControlsCard(
                     state = state,
@@ -1699,8 +1815,8 @@ private fun TunerSection(
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ControlButtons(
                     state = state,
@@ -1740,13 +1856,26 @@ private const val DEFAULT_FREQUENCY_STEP_KHZ = 100
 @Composable
 private fun SettingsSection(
     state: UiState,
-    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean) -> Unit
+    onUpdateSettings: (signalUnit: SignalUnit, networkBuffer: Int, playerBuffer: Int, restartAudioOnTune: Boolean, passThroughEnabled: Boolean, playAudioByDefault: Boolean) -> Unit
 ) {
     var signalUnit by remember(state.signalUnit) { mutableStateOf(state.signalUnit) }
     var networkBuffer by remember(state.networkBuffer) { mutableStateOf(state.networkBuffer.toString()) }
     var playerBuffer by remember(state.playerBuffer) { mutableStateOf(state.playerBuffer.toString()) }
     var restartAudioOnTune by remember(state.restartAudioOnTune) { mutableStateOf(state.restartAudioOnTune) }
     var passThroughEnabled by remember(state.passThroughEnabled) { mutableStateOf(state.passThroughEnabled) }
+    var playAudioByDefault by remember(state.playAudioByDefault) { mutableStateOf(state.playAudioByDefault) }
+
+    // Settings apply immediately on change — there is no Apply button.
+    fun commit() {
+        onUpdateSettings(
+            signalUnit,
+            networkBuffer.toIntOrNull() ?: state.networkBuffer,
+            playerBuffer.toIntOrNull() ?: state.playerBuffer,
+            restartAudioOnTune,
+            passThroughEnabled,
+            playAudioByDefault
+        )
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -1754,12 +1883,16 @@ private fun SettingsSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                RdsLabelText(
-                    text = stringResource(id = R.string.settings_display_title),
+                SettingsCategoryHeader(text = stringResource(id = R.string.settings_display_title))
+                Text(
+                    text = stringResource(id = R.string.signal_unit),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 SignalUnitSelector(
                     selected = signalUnit,
-                    onSignalUnitSelected = { signalUnit = it })
+                    onSignalUnitSelected = { signalUnit = it; commit() }
+                )
             }
         }
         LanguagePickerCard()
@@ -1768,12 +1901,17 @@ private fun SettingsSection(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                RdsLabelText(
-                    text = stringResource(id = R.string.settings_audio_buffering_title),
+                SettingsCategoryHeader(text = stringResource(id = R.string.settings_audio_title))
+                SettingsSwitchRow(
+                    title = stringResource(id = R.string.settings_play_audio_by_default),
+                    subtitle = stringResource(id = R.string.settings_play_audio_by_default_desc),
+                    checked = playAudioByDefault,
+                    onCheckedChange = { playAudioByDefault = it; commit() }
                 )
-                Text(
-                    text = stringResource(id = R.string.settings_audio_buffering_desc),
-                    style = MaterialTheme.typography.bodyMedium
+                SettingsSwitchRow(
+                    title = stringResource(id = R.string.settings_restart_audio_on_tune),
+                    checked = restartAudioOnTune,
+                    onCheckedChange = { restartAudioOnTune = it; commit() }
                 )
                 val bufferLabel = pluralStringResource(
                     id = R.plurals.settings_current_buffers,
@@ -1782,98 +1920,91 @@ private fun SettingsSection(
                     state.playerBuffer
                 )
                 Text(
+                    text = stringResource(id = R.string.settings_audio_buffering_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
                     text = bufferLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                RdsLabelText(text = stringResource(id = R.string.settings_network_buffer_label))
                 OutlinedTextField(
                     value = networkBuffer,
-                    onValueChange = { networkBuffer = it.filter { c -> c.isDigit() } },
+                    onValueChange = { networkBuffer = it.filter { c -> c.isDigit() }; commit() },
                     label = { Text(stringResource(id = R.string.settings_network_buffer_label)) },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
-                RdsLabelText(text = stringResource(id = R.string.settings_player_buffer_label))
                 OutlinedTextField(
                     value = playerBuffer,
-                    onValueChange = { playerBuffer = it.filter { c -> c.isDigit() } },
+                    onValueChange = { playerBuffer = it.filter { c -> c.isDigit() }; commit() },
                     label = { Text(stringResource(id = R.string.settings_player_buffer_label)) },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { restartAudioOnTune = !restartAudioOnTune }
-                        .padding(vertical = 4.dp)
-                ) {
-                    Checkbox(
-                        checked = restartAudioOnTune,
-                        onCheckedChange = { restartAudioOnTune = it }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    RdsLabelText(text = stringResource(id = R.string.settings_restart_audio_on_tune))
-                }
             }
         }
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = stringResource(id = R.string.settings_pass_through_label),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                SettingsCategoryHeader(text = stringResource(id = R.string.settings_pass_through_label))
+                SettingsSwitchRow(
+                    title = stringResource(id = R.string.settings_pass_through_label),
+                    subtitle = stringResource(id = R.string.settings_pass_through_desc),
+                    checked = passThroughEnabled,
+                    onCheckedChange = { passThroughEnabled = it; commit() }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCategoryHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onCheckedChange(!checked) }
+            .heightIn(min = 48.dp)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
                 Text(
-                    text = stringResource(id = R.string.settings_pass_through_desc),
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable { passThroughEnabled = !passThroughEnabled }
-                        .padding(vertical = 4.dp)
-                ) {
-                    Checkbox(
-                        checked = passThroughEnabled,
-                        onCheckedChange = { passThroughEnabled = it }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (passThroughEnabled) {
-                            stringResource(id = R.string.settings_pass_through_enabled)
-                        } else {
-                            stringResource(id = R.string.settings_pass_through_disabled)
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
             }
         }
-        Button(
-            onClick = {
-                onUpdateSettings(
-                    signalUnit,
-                    networkBuffer.toIntOrNull() ?: state.networkBuffer,
-                    playerBuffer.toIntOrNull() ?: state.playerBuffer,
-                    restartAudioOnTune,
-                    passThroughEnabled
-                )
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = stringResource(id = R.string.apply_settings))
-        }
+        Spacer(Modifier.width(16.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -1895,26 +2026,11 @@ private fun LanguagePickerCard() {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            RdsLabelText(text = stringResource(id = R.string.settings_language_title))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                choices.forEach { (tag, label) ->
-                    val isSelected = selected == tag
-                    val colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        contentColor = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                    FilledTonalButton(
+            SettingsCategoryHeader(text = stringResource(id = R.string.settings_language_title))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                choices.forEachIndexed { index, (tag, label) ->
+                    SegmentedButton(
+                        selected = selected == tag,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             selected = tag
@@ -1926,8 +2042,7 @@ private fun LanguagePickerCard() {
                                 }
                             )
                         },
-                        colors = colors,
-                        modifier = Modifier.weight(1f)
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = choices.size)
                     ) {
                         Text(text = label)
                     }
@@ -1942,23 +2057,15 @@ private fun SignalUnitSelector(
     selected: SignalUnit,
     onSignalUnitSelected: (SignalUnit) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        RdsLabelText(
-            text = stringResource(id = R.string.signal_unit),
-        )
-        OutlinedButton(onClick = { expanded = true }) {
-            Text(text = selected.displayName)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            SignalUnit.entries.forEach { unit ->
-                DropdownMenuItem(
-                    text = { Text(unit.displayName) },
-                    onClick = {
-                        onSignalUnitSelected(unit)
-                        expanded = false
-                    }
-                )
+    val units = SignalUnit.entries
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        units.forEachIndexed { index, unit ->
+            SegmentedButton(
+                selected = selected == unit,
+                onClick = { onSignalUnitSelected(unit) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = units.size)
+            ) {
+                Text(text = unit.displayName)
             }
         }
     }
@@ -1976,6 +2083,8 @@ private fun ControlButtons(
     val imsActive = state.tunerState?.ims == true
     val eqActive = state.tunerState?.eq == true
     val isStereoForced = state.tunerState?.stereoForced == true
+    // CEQ (FM_Set_ChannelEqualizer) and IMS (FM_Set_MphSuppression) are native TEF668X DSP
+    // features driven by the `G<eq><ims>` command, so they work on USB too.
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -2252,11 +2361,14 @@ private fun InformationSection(
     currentPty: (TunerState?) -> String
 ) {
     val tuner = state.tunerState
+    // The station logo, ECC/country, AF list and transmitter database lookup are all provided by
+    // fm-dx-webserver; a direct USB / xdrd tuner only yields the natively decoded RDS fields.
+    val webExtras = state.connectionType == ConnectionType.SERVER
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (!state.stationLogoUrl.isNullOrBlank()) {
+        if (webExtras && !state.stationLogoUrl.isNullOrBlank()) {
             StationLogo(state.stationLogoUrl)
         }
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -2265,7 +2377,7 @@ private fun InformationSection(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 RdsPsPiContent(tuner)
-                RdsPtyEccContent(tuner, currentPty)
+                RdsPtyEccContent(tuner, currentPty, showEcc = webExtras)
                 RdsFlagsRow(tuner)
                 val country = tuner?.countryName ?: tuner?.countryIso
                 if (!country.isNullOrBlank()) {
@@ -2294,36 +2406,44 @@ private fun InformationSection(
                         )
                     }
                 }
-                val afText = tuner?.afList?.size?.let { count ->
-                    pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
-                } ?: stringResource(id = R.string.none)
-                RdsLabelValueRow(
-                    label = stringResource(
-                        id = R.string.rds_af_label,
-                        ""
-                    )
-                ) { valueModifier ->
-                    Text(
-                        text = afText,
-                        modifier = valueModifier
-                    )
+                if (webExtras) {
+                    val afText = tuner?.afList?.size?.let { count ->
+                        pluralStringResource(id = R.plurals.af_frequencies, count = count, count)
+                    } ?: stringResource(id = R.string.none)
+                    RdsLabelValueRow(
+                        label = stringResource(
+                            id = R.string.rds_af_label,
+                            ""
+                        )
+                    ) { valueModifier ->
+                        Text(
+                            text = afText,
+                            modifier = valueModifier
+                        )
+                    }
                 }
                 RdsRadiotextContent(tuner)
             }
         }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StationDetailsContent(state)
+        if (webExtras) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StationDetailsContent(state)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> String) {
+private fun RdsPtyEccContent(
+    tuner: TunerState?,
+    currentPty: (TunerState?) -> String,
+    showEcc: Boolean = true
+) {
     val ecc = tuner?.ecc?.takeUnless { it.isBlank() } ?: "   "
     val pty = currentPty(tuner).trimStart()
 
@@ -2336,16 +2456,17 @@ private fun RdsPtyEccContent(tuner: TunerState?, currentPty: (TunerState?) -> St
         Spacer(Modifier.width(8.dp))
         Text(pty)
 
-        // Push right group to the edge
-        Spacer(Modifier.weight(1f))
-
-        // Right: ECC label (green) + value aligned to the right
-        RdsLabelText(text = stringResource(id = R.string.rds_ecc_label, ""))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = ecc,
-            textAlign = TextAlign.End
-        )
+        // Right: ECC label (green) + value — ECC isn't decoded on the raw protocol, so it is
+        // only shown for server connections that supply it.
+        if (showEcc) {
+            Spacer(Modifier.weight(1f))
+            RdsLabelText(text = stringResource(id = R.string.rds_ecc_label, ""))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = ecc,
+                textAlign = TextAlign.End
+            )
+        }
     }
 }
 
@@ -3133,7 +3254,7 @@ private fun SettingsScreenPreview() {
         Surface {
             SettingsScreen(
                 state = previewUiState(),
-                onUpdateSettings = { _, _, _, _, _ -> },
+                onUpdateSettings = { _, _, _, _, _, _ -> },
                 onBack = {}
             )
         }

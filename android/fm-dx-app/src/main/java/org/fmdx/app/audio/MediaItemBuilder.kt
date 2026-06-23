@@ -114,23 +114,3 @@ fun buildPlayableServerItem(
         .setMediaMetadata(metadata)
         .build()
 }
-
-fun buildBrowsableFolderItem(
-    mediaId: String,
-    title: String,
-    subtitle: String? = null,
-    mediaType: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
-): MediaItem {
-    val metadata = MediaMetadata.Builder()
-        .setTitle(title)
-        .setDisplayTitle(title)
-        .setSubtitle(subtitle)
-        .setMediaType(mediaType)
-        .setIsBrowsable(true)
-        .setIsPlayable(false)
-        .build()
-    return MediaItem.Builder()
-        .setMediaId(mediaId)
-        .setMediaMetadata(metadata)
-        .build()
-}
