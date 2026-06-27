@@ -594,7 +594,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updatePassThroughServiceState() {
         val state = uiState.value
-        val url = state.serverUrl
+        // Use the raw session label (http(s)://… for a server, usb://… for a direct tuner).
+        // uiState.serverUrl hides transport labels, which would stop the service starting on USB.
+        val url = sessionController.state.value.serverUrl
         if (state.passThroughEnabled && state.isConnected && url.isNotBlank()) {
             PassThroughService.start(app, url)
         } else {
