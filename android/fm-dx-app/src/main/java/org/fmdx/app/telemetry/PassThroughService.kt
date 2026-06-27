@@ -20,9 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.fmdx.app.BuildConfig
+import org.fmdx.app.FmDxApp
 import org.fmdx.app.MainActivity
 import org.fmdx.app.R
-import org.fmdx.app.data.ControlConnection
 import org.fmdx.app.data.FmDxRepository
 import org.fmdx.app.data.PluginConnection
 import org.fmdx.app.data.PluginTelemetryEvent
@@ -36,8 +36,9 @@ class PassThroughService : Service() {
     private val repository by lazy { FmDxRepository(okHttpClient) }
     private val telemetrySender by lazy { PassThroughTelemetrySender(this, serviceScope) }
 
-    private var controlConnection: ControlConnection? = null
+    private val sessionController by lazy { (application as FmDxApp).sessionController }
     private var pluginConnection: PluginConnection? = null
+    private var stateJob: Job? = null
     private var restartJob: Job? = null
     private var currentServerUrl: String? = null
 
@@ -76,17 +77,21 @@ class PassThroughService : Service() {
         stopConnections()
         telemetrySender.setFeatureEnabled(true)
         telemetrySender.onConnected(url)
-        controlConnection = repository.connectControl(
-            baseUrl = url,
-            userAgent = BuildConfig.USER_AGENT,
-            scope = serviceScope,
-            onState = { telemetrySender.updateTunerState(it) },
-            onClosed = { scheduleRestart() },
-            onError = { throwable ->
-                Log.w(TAG, "control socket error", throwable)
-                scheduleRestart()
+        // Tuner state comes from the process-wide session controller, so telemetry works for BOTH
+        // a remote fm-dx-webserver and a directly attached USB tuner (which has no server socket).
+        stateJob = serviceScope.launch {
+            sessionController.state.collect { session ->
+                session.tunerState?.let { telemetrySender.updateTunerState(it) }
             }
-        )
+        }
+        // GPS + scanner telemetry are fm-dx-webserver plugin features — server connections only.
+        if (url.startsWith("http", ignoreCase = true)) {
+            connectPlugin(url)
+        }
+    }
+
+    private fun connectPlugin(url: String) {
+        pluginConnection?.close()
         pluginConnection = repository.connectPlugin(
             baseUrl = url,
             userAgent = BuildConfig.USER_AGENT,
@@ -101,8 +106,8 @@ class PassThroughService : Service() {
     private fun stopConnections() {
         restartJob?.cancel()
         restartJob = null
-        controlConnection?.close()
-        controlConnection = null
+        stateJob?.cancel()
+        stateJob = null
         pluginConnection?.close()
         pluginConnection = null
         telemetrySender.setFeatureEnabled(false)
@@ -110,11 +115,13 @@ class PassThroughService : Service() {
     }
 
     private fun scheduleRestart() {
-        if (currentServerUrl.isNullOrBlank()) return
+        val url = currentServerUrl ?: return
+        // Only the plugin socket can drop; tuner state is driven by the session controller.
+        if (!url.startsWith("http", ignoreCase = true)) return
         if (restartJob?.isActive == true) return
         restartJob = serviceScope.launch {
             delay(RESTART_DELAY_MS)
-            currentServerUrl?.let { startConnections(it) }
+            connectPlugin(url)
         }
     }
 

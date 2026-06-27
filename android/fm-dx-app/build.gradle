@@ -19,8 +19,8 @@ def runGit = { String... args ->
     def text = result.standardOutput.asText.get().trim()
     text.isEmpty() ? null : text
 }
-def FALLBACK_VERSION_CODE = 20001
-def FALLBACK_VERSION_NAME = "2.0.1"
+def FALLBACK_VERSION_CODE = 20100
+def FALLBACK_VERSION_NAME = "2.1.0"
 def resolvedVersionCode = runGit('rev-list', '--count', 'HEAD')?.toInteger() ?: FALLBACK_VERSION_CODE
 def resolvedVersionName = runGit('describe', '--tags', '--always', '--dirty')
     ?.replaceFirst(/^v/, '') ?: FALLBACK_VERSION_NAME
